@@ -440,6 +440,36 @@ export type JobUsageLimitsDoc = {
   updatedAt: Date;
 };
 
+export type LlmGatewayTelemetryUsageDoc = {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  estimatedInputCostUsd: number | null;
+  estimatedOutputCostUsd: number | null;
+  estimatedTotalCostUsd: number | null;
+};
+
+export type LlmGatewayTelemetryDoc = {
+  _id: ObjectId;
+  event: 'llm_gateway_success' | 'llm_gateway_failure';
+  feature: string;
+  schemaName: string;
+  requestModel: string;
+  promptVersion: string | null;
+  responseModel: string | null;
+  temperature: number;
+  maxTokens: number;
+  timeoutMs: number;
+  messageCount: number;
+  attempts: number;
+  durationMs: number;
+  usage: LlmGatewayTelemetryUsageDoc;
+  failureStage: 'config' | 'transport' | 'upstream' | 'response_content' | 'response_json' | null;
+  upstreamStatus: number | null;
+  errorMessage: string | null;
+  createdAt: Date;
+};
+
 export type BillingSubscriptionStatus = 'active' | 'grace' | 'billing_issue' | 'expired' | 'none';
 
 export type BillingSubscriptionDoc = {
@@ -635,6 +665,7 @@ export type MongoCollections = {
   jobsParsed: Collection<JobParsedDoc>;
   jobAnalyses: Collection<JobAnalysisDoc>;
   jobUsageLimits: Collection<JobUsageLimitsDoc>;
+  llmGatewayTelemetry: Collection<LlmGatewayTelemetryDoc>;
   billingSubscriptions: Collection<BillingSubscriptionDoc>;
   revenueCatEvents: Collection<RevenueCatEventDoc>;
   pushNotificationTokens: Collection<PushNotificationTokenDoc>;
@@ -690,6 +721,7 @@ export async function getCollections(): Promise<MongoCollections> {
     jobsParsed: db.collection<JobParsedDoc>('jobs_parsed'),
     jobAnalyses: db.collection<JobAnalysisDoc>('job_analyses'),
     jobUsageLimits: db.collection<JobUsageLimitsDoc>('job_usage_limits'),
+    llmGatewayTelemetry: db.collection<LlmGatewayTelemetryDoc>('llm_gateway_telemetry'),
     billingSubscriptions: db.collection<BillingSubscriptionDoc>('billing_subscriptions'),
     revenueCatEvents: db.collection<RevenueCatEventDoc>('revenuecat_events'),
     pushNotificationTokens: db.collection<PushNotificationTokenDoc>('push_notification_tokens'),
@@ -774,6 +806,14 @@ export async function ensureMongoIndexes() {
       );
       await collections.jobAnalyses.createIndex({ userId: 1, updatedAt: -1 });
       await collections.jobUsageLimits.createIndex({ userId: 1 }, { unique: true });
+      await collections.llmGatewayTelemetry.createIndex({ createdAt: -1 });
+      await collections.llmGatewayTelemetry.createIndex({ event: 1, createdAt: -1 });
+      await collections.llmGatewayTelemetry.createIndex({ feature: 1, createdAt: -1 });
+      await collections.llmGatewayTelemetry.createIndex({ promptVersion: 1, createdAt: -1 });
+      await collections.llmGatewayTelemetry.createIndex(
+        { createdAt: 1 },
+        { expireAfterSeconds: env.OPENAI_TELEMETRY_RETENTION_DAYS * 24 * 60 * 60 }
+      );
       await collections.billingSubscriptions.createIndex({ userId: 1 }, { unique: true });
       await collections.billingSubscriptions.createIndex({ appUserId: 1 });
       await collections.billingSubscriptions.createIndex({ tier: 1, updatedAt: -1 });

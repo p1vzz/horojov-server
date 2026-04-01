@@ -195,14 +195,6 @@ const OUTPUT_SCHEMA = {
   },
 } as const;
 
-function parseJsonSafely(text: string) {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-}
-
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -551,6 +543,7 @@ export async function generateFullNatalCareerAnalysis(input: {
   const completion = await openAiStructuredGateway.requestStructuredCompletion({
     feature: config.feature,
     model,
+    promptVersion,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
     jsonSchema: OUTPUT_SCHEMA,

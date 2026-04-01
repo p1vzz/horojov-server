@@ -143,14 +143,6 @@ function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
-function parseJsonSafely(text: string) {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-}
-
 function toBase64ByteLength(base64: string) {
   return Buffer.byteLength(base64, 'base64');
 }
@@ -361,6 +353,7 @@ export async function parseJobFromScreenshots(input: { screenshots: string[] }) 
   const completion = await openAiStructuredGateway.requestStructuredCompletion({
     feature: config.feature,
     model: config.model,
+    promptVersion: config.promptVersion,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
     jsonSchema: OUTPUT_SCHEMA,

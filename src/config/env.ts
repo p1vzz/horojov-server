@@ -30,6 +30,12 @@ const optionalEnvBoolean = z.preprocess((value) => {
   return parseEnvBoolean(value);
 }, z.boolean().optional());
 
+const optionalEnvNumber = z.preprocess((value) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'string' && value.trim() === '') return undefined;
+  return value;
+}, z.coerce.number().finite().nonnegative().optional());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('0.0.0.0'),
@@ -62,6 +68,13 @@ const envSchema = z.object({
   JOB_SCREENSHOT_MAX_TOTAL_BYTES: z.coerce.number().int().min(300_000).max(30_000_000).default(6_000_000),
   OPENAI_API_KEY: optionalNonEmptyString,
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
+  OPENAI_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+  OPENAI_RETRY_BASE_DELAY_MS: z.coerce.number().int().min(50).max(10_000).default(300),
+  OPENAI_RETRY_MAX_DELAY_MS: z.coerce.number().int().min(50).max(30_000).default(2_000),
+  OPENAI_TELEMETRY_ENABLED: envBoolean.default(true),
+  OPENAI_TELEMETRY_RETENTION_DAYS: z.coerce.number().int().min(7).max(365).default(180),
+  OPENAI_COST_INPUT_USD_PER_1M_TOKENS: optionalEnvNumber,
+  OPENAI_COST_OUTPUT_USD_PER_1M_TOKENS: optionalEnvNumber,
   OPENAI_INSIGHTS_MODEL_FREE: z.string().min(1).default('gpt-4o-mini'),
   OPENAI_INSIGHTS_MODEL_PREMIUM: z.string().min(1).default('gpt-4o-mini'),
   OPENAI_INSIGHTS_PROMPT_VERSION: z.string().min(1).default('v2'),

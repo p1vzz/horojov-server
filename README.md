@@ -19,11 +19,19 @@ REST backend for HoroJob.
    - alerts scheduler thresholds/intervals are configured via `JOB_METRICS_ALERT_*`
    - burnout scheduler thresholds/intervals are configured via `BURNOUT_ALERT_*`
    - interview strategy scheduler thresholds/intervals are configured via `INTERVIEW_STRATEGY_*`
-   - optional local QA override: `BURNOUT_ALERT_FORCE_SEVERITY=warn|high|critical`
+  - optional local QA override: `BURNOUT_ALERT_FORCE_SEVERITY=warn|high|critical`
+  - shared OpenAI retry and telemetry behavior is configured via `OPENAI_MAX_RETRIES`, `OPENAI_RETRY_*`, and `OPENAI_TELEMETRY_*`
 3. Start dev server:
    - API only: `npm run dev`
    - worker only: `npm run dev:worker`
    - legacy combined runtime: `npm run dev:all`
+
+Quality gates:
+- `npm run check`
+  - includes app typecheck and `scripts/tsconfig.json` validation
+- `npm run lint`
+- `npm test`
+- `npm run verify`
 
 Production-style runtime split:
 - API process: `npm run start`

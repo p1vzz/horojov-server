@@ -1,4 +1,3 @@
-import { env } from '../config/env.js';
 import { openAiStructuredGateway } from './llmGateway.js';
 import { getCareerInsightsPromptConfig } from './llmPromptRegistry.js';
 
@@ -109,14 +108,6 @@ const OUTPUT_SCHEMA = {
   },
 } as const;
 
-function modelForTier(tier: InsightTier) {
-  return getCareerInsightsPromptConfig(tier).model;
-}
-
-function maxTokensForTier(tier: InsightTier) {
-  return getCareerInsightsPromptConfig(tier).maxTokens;
-}
-
 function promptForTier(tier: InsightTier) {
   if (tier === 'premium') {
     return {
@@ -136,14 +127,6 @@ export function getInsightsConfig(tier: InsightTier) {
     model: config.model,
     promptVersion: config.promptVersion,
   };
-}
-
-function parseJsonSafely(text: string) {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
 }
 
 export function normalizeInsightsPayload(tier: InsightTier, parsed: unknown): CareerInsightsPayload | null {
@@ -191,6 +174,7 @@ export async function generateCareerInsights(input: {
   const completion = await openAiStructuredGateway.requestStructuredCompletion({
     feature: config.feature,
     model: config.model,
+    promptVersion,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
     jsonSchema: OUTPUT_SCHEMA,

@@ -217,14 +217,6 @@ function pickBySeed(items: readonly string[], seed: string) {
   return items[normalizedIndex] ?? items[0] ?? '';
 }
 
-function parseJsonSafely(text: string) {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-}
-
 function localDateKey(parts: LocalDateParts) {
   return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 }
@@ -661,6 +653,7 @@ async function requestInterviewStrategyExplanationFromLlm(input: {
   const completion = await openAiStructuredGateway.requestStructuredCompletion({
     feature: config.feature,
     model,
+    promptVersion,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
     jsonSchema: INTERVIEW_STRATEGY_LLM_SCHEMA,

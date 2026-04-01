@@ -1,7 +1,8 @@
-import * as assert from 'node:assert/strict'
+import * as assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import { ObjectId } from 'mongodb';
 import type { AuthContext } from '../src/services/auth.js';
+import type { JobMetricsReport } from '../src/services/jobMetrics.js';
 import { registerAstrologyRoutes } from '../src/routes/astrology.js';
 import { registerAuthRoutes } from '../src/routes/auth.js';
 import { registerBillingRoutes } from '../src/routes/billing.js';
@@ -199,7 +200,7 @@ async function smokeJobRoutes() {
         },
         sources: [],
       }),
-      evaluateJobMetricsAlerts: (metrics) => ({
+      evaluateJobMetricsAlerts: (metrics: JobMetricsReport) => ({
         generatedAt: new Date('2026-03-30T01:00:00.000Z').toISOString(),
         window: metrics.window,
         thresholds: {

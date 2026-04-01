@@ -15,9 +15,12 @@
     "start:api": "node dist/apiServer.js",
     "start:worker": "node dist/worker.js",
     "start:all": "node dist/server.js",
-    "check": "tsc --noEmit",
+    "check:app": "tsc --noEmit -p tsconfig.json",
+    "check:scripts": "tsc --noEmit -p scripts/tsconfig.json",
+    "check": "npm run check:app && npm run check:scripts",
+    "lint": "eslint . --max-warnings=0",
     "test": "node --import tsx --test src/services/*.test.ts src/routes/*.test.ts src/runtime/*.test.ts",
-    "verify": "npm run check && npm test && npm run build",
+    "verify": "npm run check && npm run lint && npm test && npm run build",
     "smoke:routes": "node --import tsx scripts/ci-route-smoke.ts",
     "ci:smoke": "npm run verify && npm run smoke:routes"
   },
@@ -37,9 +40,13 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^9.24.0",
     "@types/node": "^22.19.15",
+    "eslint": "^9.24.0",
+    "globals": "^16.0.0",
     "pino-pretty": "^13.1.3",
     "tsx": "^4.21.0",
+    "typescript-eslint": "^8.30.1",
     "typescript": "^5.9.3"
   }
 }

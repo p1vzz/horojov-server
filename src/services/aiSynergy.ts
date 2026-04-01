@@ -327,14 +327,6 @@ function pickBySeed(items: string[], seed: string, salt: string) {
   return items[index] ?? items[0] ?? '';
 }
 
-function parseJsonSafely(text: string) {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-}
-
 export function normalizeNarrativeFromLlm(raw: unknown) {
   if (!raw || typeof raw !== 'object') return null;
   const payload = raw as Record<string, unknown>;
@@ -1121,6 +1113,7 @@ async function maybeEnhanceNarrativeWithLlm(
   const completion = await openAiStructuredGateway.requestStructuredCompletion({
     feature: config.feature,
     model,
+    promptVersion,
     temperature: config.temperature,
     maxTokens: config.maxTokens,
     jsonSchema: AI_SYNERGY_LLM_SCHEMA,

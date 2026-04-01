@@ -167,7 +167,7 @@ export async function handleJobAnalyze(
 
   let providerUsed = rawDoc?.provider ?? null;
   let providerAttempts: ReturnType<typeof compactProviderAttempts> = [];
-  let rawCacheHit = rawDoc !== null;
+  const rawCacheHit = rawDoc !== null;
   let usageIncremented = false;
 
   if (!rawDoc) {
@@ -337,7 +337,7 @@ export async function handleJobAnalyze(
       normalizedText: rawDoc.normalizedText,
     });
 
-  let parsedDocCandidate = await collections.jobsParsed.findOne({
+  const parsedDocCandidate = await collections.jobsParsed.findOne({
     jobContentHash: rawDoc.jobContentHash,
     parserVersion: versions.parserVersion,
   });

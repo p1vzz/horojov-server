@@ -1,6 +1,6 @@
 # Mongo Collections And Indexes
 **Status:** Active  
-**Last synced:** 2026-03-30
+**Last synced:** 2026-04-01
 
 ## Goal
 
@@ -56,6 +56,10 @@ If this document and code diverge, code is authoritative and this doc must be up
 - `interview_strategy_settings`
 - `interview_strategy_slots`
 
+### AI Platform / Telemetry
+
+- `llm_gateway_telemetry`
+
 ## Index Contract (Critical)
 
 ### Auth / Session
@@ -107,14 +111,24 @@ If this document and code diverge, code is authoritative and this doc must be up
 - `interview_strategy_settings.userId` unique
 - `interview_strategy_slots.userId + slotId` unique
 
+### AI Platform / Telemetry
+
+- `llm_gateway_telemetry.createdAt` TTL
+- `llm_gateway_telemetry.createdAt` descending
+- `llm_gateway_telemetry.event + createdAt` descending
+- `llm_gateway_telemetry.feature + createdAt` descending
+- `llm_gateway_telemetry.promptVersion + createdAt` descending
+
 ## Operational Notes
 
 - All indexes are ensured on startup before server starts accepting traffic.
 - TTL indexes are part of product behavior (session expiry, job cache windows, negative cache cooldown); changes are breaking behavior changes and must be documented.
 - `discover_role_catalog` migration logic currently drops legacy `onetCode_1` index before recreating partial unique variant.
+- `llm_gateway_telemetry` retention is driven by `OPENAI_TELEMETRY_RETENTION_DAYS`.
 
 ## Related Files
 
 - `src/db/mongo.ts`
 - `src/apiServer.ts`
 - `src/worker.ts`
+- `src/services/llmTelemetry.ts`

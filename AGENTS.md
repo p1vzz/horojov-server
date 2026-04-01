@@ -69,6 +69,9 @@ This repo is separate from `../horojob`; it is not a monorepo.
 - Available scripts:
   - `npm run dev`
   - `npm run build`
+  - `npm run lint`
+  - `npm run check:app`
+  - `npm run check:scripts`
   - `npm run start`
   - `npm run check`
   - `npm test`
