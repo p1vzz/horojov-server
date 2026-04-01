@@ -1,18 +1,18 @@
-import type { FastifyInstance } from "fastify";
-import { getCollections } from "../../db/mongo.js";
-import { listAiSynergyHistory } from "../aiSynergy.js";
+import type { FastifyInstance } from 'fastify';
+import { getCollections } from '../../db/mongo.js';
+import { listAiSynergyHistory } from '../aiSynergy.js';
 import {
   buildTodayDate,
   getOrCreateDailyTransitForUser,
   toDailyTransitResponse,
-} from "../dailyTransit.js";
+} from '../dailyTransit.js';
 import {
   aiSynergyHistoryQuerySchema,
   natalChartRequestSchema,
   upsertBirthProfile,
-} from "./astrologyShared.js";
-import { requireAstrologyAuth } from "./astrologyRouteGuards.js";
-import type { AstrologyRouteDependencies } from "./astrologyRouteTypes.js";
+} from './astrologyShared.js';
+import { requireAstrologyAuth } from './astrologyRouteGuards.js';
+import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
 
 export function registerAstrologyProfileRoutes(
   app: FastifyInstance,

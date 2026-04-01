@@ -1,18 +1,18 @@
-import type { FastifyReply, FastifyRequest } from "fastify";
-import { getCollections } from "../../db/mongo.js";
-import { authenticateByAuthorizationHeader } from "../auth.js";
-import { getJobAnalysisVersions } from "../jobAnalysis.js";
-import { isCacheValid } from "../jobCachePolicy.js";
-import { validateAndCanonicalizeJobUrl } from "../jobUrl.js";
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { getCollections } from '../../db/mongo.js';
+import { authenticateByAuthorizationHeader } from '../auth.js';
+import { getJobAnalysisVersions } from '../jobAnalysis.js';
+import { isCacheValid } from '../jobCachePolicy.js';
+import { validateAndCanonicalizeJobUrl } from '../jobUrl.js';
 import {
   getCurrentUsageLimitState,
   resolveUserUsagePlan,
-} from "../jobUsageLimits.js";
+} from '../jobUsageLimits.js';
 import {
   getValidationErrorMessage,
   statusCodeForValidationCode,
-} from "./common.js";
-import { preflightSchema } from "./schemas.js";
+} from './common.js';
+import { preflightSchema } from './schemas.js';
 
 export async function handleJobPreflight(
   request: FastifyRequest,

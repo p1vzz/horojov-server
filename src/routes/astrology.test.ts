@@ -1,12 +1,12 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import Fastify, { type FastifyInstance } from "fastify";
-import { ObjectId } from "mongodb";
-import type { AuthContext } from "../services/auth.js";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import Fastify, { type FastifyInstance } from 'fastify';
+import { ObjectId } from 'mongodb';
+import type { AuthContext } from '../services/auth.js';
 import {
   registerAstrologyRoutes,
   type AstrologyRouteDependencies,
-} from "./astrology.js";
+} from './astrology.js';
 
 function buildFakeAuthContext(
   subscriptionTier: "free" | "premium",

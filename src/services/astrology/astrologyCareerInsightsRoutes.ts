@@ -1,21 +1,21 @@
-import type { FastifyInstance } from "fastify";
-import { ObjectId } from "mongodb";
-import { env } from "../../config/env.js";
-import { getCollections } from "../../db/mongo.js";
+import type { FastifyInstance } from 'fastify';
+import { ObjectId } from 'mongodb';
+import { env } from '../../config/env.js';
+import { getCollections } from '../../db/mongo.js';
 import {
   generateCareerInsights,
   getInsightsConfig,
   type InsightTier,
-} from "../careerInsights.js";
-import { requireAstrologyAuth } from "./astrologyRouteGuards.js";
+} from '../careerInsights.js';
+import { requireAstrologyAuth } from './astrologyRouteGuards.js';
 import {
   buildChartPromptPayload,
   careerInsightsQuerySchema,
   MAX_CAREER_INSIGHTS,
   MIN_CAREER_INSIGHTS,
   westernChartSchema,
-} from "./astrologyShared.js";
-import type { AstrologyRouteDependencies } from "./astrologyRouteTypes.js";
+} from './astrologyShared.js';
+import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
 
 export function registerAstrologyCareerInsightsRoutes(
   app: FastifyInstance,

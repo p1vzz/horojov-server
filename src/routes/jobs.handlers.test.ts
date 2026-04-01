@@ -1,17 +1,17 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import assert from 'node:assert/strict';
+import test from 'node:test';
 import Fastify, {
   type FastifyInstance,
   type RouteHandlerMethod,
-} from "fastify";
-import { ObjectId } from "mongodb";
-import type { AuthContext } from "../services/auth.js";
-import type { JobMetricsReport } from "../services/jobMetrics.js";
-import type { UsageLimitState } from "../services/jobUsageLimits.js";
+} from 'fastify';
+import { ObjectId } from 'mongodb';
+import type { AuthContext } from '../services/auth.js';
+import type { JobMetricsReport } from '../services/jobMetrics.js';
+import type { UsageLimitState } from '../services/jobUsageLimits.js';
 import {
   registerJobRoutes,
   type JobsRouteDependencies,
-} from "./jobs.handlers.js";
+} from './jobs.handlers.js';
 
 const fakeLimit: UsageLimitState = {
   plan: "premium",

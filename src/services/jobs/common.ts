@@ -1,5 +1,5 @@
-import type { NormalizedJobPayload } from "../jobProviders.js";
-import type { JobUrlValidationCode } from "../jobUrl.js";
+import type { NormalizedJobPayload } from '../jobProviders.js';
+import type { JobUrlValidationCode } from '../jobUrl.js';
 
 export type SupportedJobSource = NormalizedJobPayload["source"];
 

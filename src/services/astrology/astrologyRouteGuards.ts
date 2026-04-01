@@ -1,6 +1,6 @@
-import type { FastifyReply, FastifyRequest } from "fastify";
-import type { AuthContext } from "../auth.js";
-import type { AstrologyRouteDependencies } from "./astrologyRouteTypes.js";
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { AuthContext } from '../auth.js';
+import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
 
 export async function requireAstrologyAuth(
   request: FastifyRequest,

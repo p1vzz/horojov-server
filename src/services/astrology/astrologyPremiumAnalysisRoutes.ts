@@ -1,13 +1,13 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { buildTodayDate } from "../dailyTransit.js";
-import { getOrCreateMorningBriefingForUser } from "../morningBriefing.js";
-import { requirePremiumAstrologyAuth } from "./astrologyRouteGuards.js";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { buildTodayDate } from '../dailyTransit.js';
+import { getOrCreateMorningBriefingForUser } from '../morningBriefing.js';
+import { requirePremiumAstrologyAuth } from './astrologyRouteGuards.js';
 import {
   fullNatalAnalysisQuerySchema,
   getOrCreateFullNatalAnalysisForUser,
   morningBriefingQuerySchema,
-} from "./astrologyShared.js";
-import type { AstrologyRouteDependencies } from "./astrologyRouteTypes.js";
+} from './astrologyShared.js';
+import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
 
 function handleMorningBriefingError(
   error: unknown,

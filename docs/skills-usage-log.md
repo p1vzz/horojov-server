@@ -14,3 +14,4 @@ Track non-trivial backend tasks to measure skill routing quality and real invoca
 | 2026-03-31 | Server api/worker runtime split and production scheduler lock hardening | node-api | mongo-contracts | Completed |
 | 2026-03-31 | Shared OpenAI gateway and prompt registry for AI services | node-api | mongo-contracts | Completed |
 | 2026-04-01 | Added LLM gateway telemetry, golden eval regressions, and cross-repo contract sync skill | node-api | mobile-server-contract-sync, skill-creator | Completed |
+| 2026-04-01 | Normalized server import style across astrology and jobs modules | node-api | none | Completed |

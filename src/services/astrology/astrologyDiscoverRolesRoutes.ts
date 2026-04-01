@@ -1,9 +1,9 @@
-import type { FastifyInstance } from "fastify";
-import { getCollections } from "../../db/mongo.js";
-import { getDiscoverRoles } from "../discoverRoles.js";
-import { requireAstrologyAuth } from "./astrologyRouteGuards.js";
-import { discoverRolesQuerySchema } from "./astrologyShared.js";
-import type { AstrologyRouteDependencies } from "./astrologyRouteTypes.js";
+import type { FastifyInstance } from 'fastify';
+import { getCollections } from '../../db/mongo.js';
+import { getDiscoverRoles } from '../discoverRoles.js';
+import { requireAstrologyAuth } from './astrologyRouteGuards.js';
+import { discoverRolesQuerySchema } from './astrologyShared.js';
+import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
 
 export function registerAstrologyDiscoverRolesRoutes(
   app: FastifyInstance,

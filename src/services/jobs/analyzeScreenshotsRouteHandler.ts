@@ -1,25 +1,25 @@
-import type { FastifyReply, FastifyRequest } from "fastify";
-import { ObjectId } from "mongodb";
-import { getCollections } from "../../db/mongo.js";
-import { authenticateByAuthorizationHeader } from "../auth.js";
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { ObjectId } from 'mongodb';
+import { getCollections } from '../../db/mongo.js';
+import { authenticateByAuthorizationHeader } from '../auth.js';
 import {
   buildDeterministicJobAnalysis,
   extractJobFeatures,
   getJobAnalysisVersions,
-} from "../jobAnalysis.js";
-import type { NormalizedJobPayload } from "../jobProviders.js";
+} from '../jobAnalysis.js';
+import type { NormalizedJobPayload } from '../jobProviders.js';
 import {
   JobScreenshotParseError,
   getScreenshotParserConfig,
   parseJobFromScreenshots,
-} from "../jobScreenshotParser.js";
+} from '../jobScreenshotParser.js';
 import {
   getCurrentUsageLimitState,
   incrementUsageAfterSuccessfulProviderCall,
   resolveUserUsagePlan,
-} from "../jobUsageLimits.js";
-import { isSupportedSource } from "./common.js";
-import { analyzeScreenshotsSchema } from "./schemas.js";
+} from '../jobUsageLimits.js';
+import { isSupportedSource } from './common.js';
+import { analyzeScreenshotsSchema } from './schemas.js';
 
 export async function handleJobAnalyzeScreenshots(
   request: FastifyRequest,

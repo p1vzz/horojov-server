@@ -1,4 +1,4 @@
-import { authenticateByAuthorizationHeader } from "../auth.js";
+import { authenticateByAuthorizationHeader } from '../auth.js';
 
 export type AstrologyRouteDependencies = {
   authenticateByAuthorizationHeader: typeof authenticateByAuthorizationHeader;

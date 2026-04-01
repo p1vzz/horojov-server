@@ -1,35 +1,35 @@
-import type { FastifyReply, FastifyRequest } from "fastify";
-import { ObjectId } from "mongodb";
-import { env } from "../../config/env.js";
-import { getCollections } from "../../db/mongo.js";
-import { authenticateByAuthorizationHeader } from "../auth.js";
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { ObjectId } from 'mongodb';
+import { env } from '../../config/env.js';
+import { getCollections } from '../../db/mongo.js';
+import { authenticateByAuthorizationHeader } from '../auth.js';
 import {
   buildDeterministicJobAnalysis,
   extractJobFeatures,
   getJobAnalysisVersions,
-} from "../jobAnalysis.js";
+} from '../jobAnalysis.js';
 import {
   buildParsedCacheExpiry,
   buildRawCacheExpiry,
   buildRawHtmlArtifactExpiry,
   isCacheValid,
-} from "../jobCachePolicy.js";
+} from '../jobCachePolicy.js';
 import {
   buildNegativeCacheExpiry,
   classifyNegativeCacheStatus,
   getNegativeCacheHttpStatus,
   NEGATIVE_CACHE_ERROR_TEXTS,
-} from "../jobNegativeCache.js";
+} from '../jobNegativeCache.js';
 import {
   fetchJobWithProviderFallback,
   isLikelyChallengeJobPayload,
-} from "../jobProviders.js";
-import { validateAndCanonicalizeJobUrl } from "../jobUrl.js";
+} from '../jobProviders.js';
+import { validateAndCanonicalizeJobUrl } from '../jobUrl.js';
 import {
   getCurrentUsageLimitState,
   incrementUsageAfterSuccessfulProviderCall,
   resolveUserUsagePlan,
-} from "../jobUsageLimits.js";
+} from '../jobUsageLimits.js';
 import {
   compactProviderAttempts,
   extractRawHtmlArtifact,
@@ -38,8 +38,8 @@ import {
   parseNormalizedJobPayload,
   statusCodeForValidationCode,
   stripRawHtmlFromPayload,
-} from "./common.js";
-import { analyzeSchema } from "./schemas.js";
+} from './common.js';
+import { analyzeSchema } from './schemas.js';
 
 export async function handleJobAnalyze(
   request: FastifyRequest,

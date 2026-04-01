@@ -1,17 +1,17 @@
-import type { FastifyInstance } from "fastify";
-import { authenticateByAuthorizationHeader } from "../auth.js";
-import { registerAstrologyNatalChartRoutes } from "./astrologyNatalChartRoutes.js";
-import { registerAstrologyPremiumRoutes } from "./astrologyPremiumRoutes.js";
-import { registerAstrologyProfileRoutes } from "./astrologyProfileRoutes.js";
+import type { FastifyInstance } from 'fastify';
+import { authenticateByAuthorizationHeader } from '../auth.js';
+import { registerAstrologyNatalChartRoutes } from './astrologyNatalChartRoutes.js';
+import { registerAstrologyPremiumRoutes } from './astrologyPremiumRoutes.js';
+import { registerAstrologyProfileRoutes } from './astrologyProfileRoutes.js';
 import type {
   AstrologyRouteDependencies,
   RegisterAstrologyRoutesOptions,
-} from "./astrologyRouteTypes.js";
+} from './astrologyRouteTypes.js';
 
 export type {
   AstrologyRouteDependencies,
   RegisterAstrologyRoutesOptions,
-} from "./astrologyRouteTypes.js";
+} from './astrologyRouteTypes.js';
 
 const defaultDeps: AstrologyRouteDependencies = {
   authenticateByAuthorizationHeader,

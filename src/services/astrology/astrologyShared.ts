@@ -1,17 +1,17 @@
-import { createHash } from "node:crypto";
-import type { FastifyBaseLogger } from "fastify";
-import { ObjectId } from "mongodb";
-import { z } from "zod";
-import { env } from "../../config/env.js";
+import { createHash } from 'node:crypto';
+import type { FastifyBaseLogger } from 'fastify';
+import { ObjectId } from 'mongodb';
+import { z } from 'zod';
+import { env } from '../../config/env.js';
 import {
   getCollections,
   type FullNatalCareerAnalysisPayloadDoc,
-} from "../../db/mongo.js";
-import { type ChartPromptPayload } from "../careerInsights.js";
+} from '../../db/mongo.js';
+import type { ChartPromptPayload } from '../careerInsights.js';
 import {
   generateFullNatalCareerAnalysis,
   getFullNatalAnalysisConfig,
-} from "../fullNatalAnalysis.js";
+} from '../fullNatalAnalysis.js';
 
 export const natalChartRequestSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),

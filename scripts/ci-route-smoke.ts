@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import Fastify, { type FastifyInstance } from 'fastify';
+import * as assert from 'node:assert/strict'
+import Fastify from 'fastify';
 import { ObjectId } from 'mongodb';
 import type { AuthContext } from '../src/services/auth.js';
 import { registerAstrologyRoutes } from '../src/routes/astrology.js';

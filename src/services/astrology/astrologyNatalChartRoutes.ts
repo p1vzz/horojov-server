@@ -1,7 +1,7 @@
-import type { FastifyInstance } from "fastify";
-import { ObjectId } from "mongodb";
-import { z } from "zod";
-import { getCollections } from "../../db/mongo.js";
+import type { FastifyInstance } from 'fastify';
+import { ObjectId } from 'mongodb';
+import { z } from 'zod';
+import { getCollections } from '../../db/mongo.js';
 import {
   buildGeoQueryCandidates,
   callAstrologyApi,
@@ -15,9 +15,9 @@ import {
   timezoneSchema,
   toFloat,
   westernChartSchema,
-} from "./astrologyShared.js";
-import { requireAstrologyAuth } from "./astrologyRouteGuards.js";
-import type { AstrologyRouteDependencies } from "./astrologyRouteTypes.js";
+} from './astrologyShared.js';
+import { requireAstrologyAuth } from './astrologyRouteGuards.js';
+import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
 
 export function registerAstrologyNatalChartRoutes(
   app: FastifyInstance,

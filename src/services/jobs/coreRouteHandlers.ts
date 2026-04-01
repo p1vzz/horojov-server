@@ -1,11 +1,11 @@
-import type { FastifyReply, FastifyRequest, RouteHandlerMethod } from "fastify";
-import type { AuthContext } from "../auth.js";
+import type { FastifyReply, FastifyRequest, RouteHandlerMethod } from 'fastify';
+import type { AuthContext } from '../auth.js';
 import type {
   JobMetricsAlertsReport,
   JobMetricsReport,
-} from "../jobMetrics.js";
-import type { UsageLimitState, UsagePlan } from "../jobUsageLimits.js";
-import { metricsQuerySchema } from "./schemas.js";
+} from '../jobMetrics.js';
+import type { UsageLimitState, UsagePlan } from '../jobUsageLimits.js';
+import { metricsQuerySchema } from './schemas.js';
 
 export type JobsCoreRouteDependencies = {
   authenticateByAuthorizationHeader: (

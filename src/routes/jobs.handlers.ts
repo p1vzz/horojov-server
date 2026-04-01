@@ -1,22 +1,22 @@
-import type { FastifyInstance, RouteHandlerMethod } from "fastify";
-import { authenticateByAuthorizationHeader } from "../services/auth.js";
+import type { FastifyInstance, RouteHandlerMethod } from 'fastify';
+import { authenticateByAuthorizationHeader } from '../services/auth.js';
 import {
   evaluateJobMetricsAlerts,
   collectJobMetrics,
-} from "../services/jobMetrics.js";
+} from '../services/jobMetrics.js';
 import {
   getCurrentUsageLimitState,
   resolveUserUsagePlan,
-} from "../services/jobUsageLimits.js";
-import { handleJobAnalyze } from "../services/jobs/analyzeRouteHandler.js";
-import { handleJobAnalyzeScreenshots } from "../services/jobs/analyzeScreenshotsRouteHandler.js";
+} from '../services/jobUsageLimits.js';
+import { handleJobAnalyze } from '../services/jobs/analyzeRouteHandler.js';
+import { handleJobAnalyzeScreenshots } from '../services/jobs/analyzeScreenshotsRouteHandler.js';
 import {
   createJobAlertsHandler,
   createJobLimitsHandler,
   createJobMetricsHandler,
   type JobsCoreRouteDependencies,
-} from "../services/jobs/coreRouteHandlers.js";
-import { handleJobPreflight } from "../services/jobs/preflightRouteHandler.js";
+} from '../services/jobs/coreRouteHandlers.js';
+import { handleJobPreflight } from '../services/jobs/preflightRouteHandler.js';
 
 export type JobsRouteDependencies = JobsCoreRouteDependencies & {
   handleJobPreflight: RouteHandlerMethod;

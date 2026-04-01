@@ -1,5 +1,5 @@
-import { z } from "zod";
-import { env } from "../../config/env.js";
+import { z } from 'zod';
+import { env } from '../../config/env.js';
 
 export const preflightSchema = z.object({
   url: z.string().trim().min(8).max(2048),
