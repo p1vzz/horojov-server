@@ -1,0 +1,624 @@
+
+> horojob-server@1.0.0 dev
+> tsx watch src/server.ts
+
+[2026-03-24 03:04:39.789 +0100] [32mINFO[39m (23252): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-24 03:04:39.789 +0100] [32mINFO[39m (23252): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-24 03:04:39.789 +0100] [32mINFO[39m (23252): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-24 03:04:39.790 +0100] [32mINFO[39m (23252): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-24 03:04:39.790 +0100] [32mINFO[39m (23252): [36mburnout alert scheduler started[39m
+    [35mintervalSeconds[39m: 300
+    [35mminScore[39m: 55
+    [35mscheduleDelaySeconds[39m: 120
+[2026-03-24 03:04:39.791 +0100] [32mINFO[39m (23252): [36minterview strategy scheduler started[39m
+    [35mintervalSeconds[39m: 86400
+    [35mthresholdDays[39m: 14
+    [35mrefillDays[39m: 14
+    [35minitialHorizonDays[39m: 30
+[2026-03-24 03:04:40.653 +0100] [32mINFO[39m (23252): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-23T02:04:39.790Z",
+      "to": "2026-03-24T02:04:39.790Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-24 03:04:41.279 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:41.279 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69b36bb1ec6972e3fb771fa0"
+    [35mcity[39m: "Warsaw, Masovian, Poland"
+    error: {}
+[2026-03-24 03:04:41.463 +0100] [32mINFO[39m (23252): [36minterview strategy scheduler cycle finished[39m
+    [35mcandidates[39m: 1
+    [35mgenerated[39m: 0
+    [35mskipped[39m: 1
+    [35mnotPremium[39m: 0
+    [35mfailed[39m: 0
+    [35mthresholdDays[39m: 14
+    [35mrefillDays[39m: 14
+[2026-03-24 03:04:41.672 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:41.672 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69b77f4f07ad843bd95211bc"
+    [35mcity[39m: "Warsaw"
+    error: {}
+[2026-03-24 03:04:42.074 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:42.074 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69b77f8b5ddc04706f7ba063"
+    [35mcity[39m: "Warsaw"
+    error: {}
+[2026-03-24 03:04:42.076 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:42.076 +0100] [31mERROR[39m (23252): [36mburnout planner failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    error: {}
+[2026-03-24 03:04:42.077 +0100] [32mINFO[39m (23252): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 0
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 1
+    [35mskipReasons[39m: {}
+[2026-03-24 03:04:42.487 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:42.487 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69b77fcba265698aba30ea77"
+    [35mcity[39m: "Warsaw"
+    error: {}
+[2026-03-24 03:04:42.897 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:42.897 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69b77ffc68456759de8d2213"
+    [35mcity[39m: "Warsaw"
+    error: {}
+[2026-03-24 03:04:43.303 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:43.303 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69b781fa6edf0045cd5d5b2f"
+    [35mcity[39m: "Warsaw"
+    error: {}
+[2026-03-24 03:04:43.705 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:43.705 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69b782241a6b8cd92a04a622"
+    [35mcity[39m: "Warsaw"
+    error: {}
+[2026-03-24 03:04:44.107 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:44.107 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    [35mcity[39m: "Nnewi, Anambra, Nigeria"
+    error: {}
+[2026-03-24 03:04:44.510 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:44.510 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69bdc0a77a652da26aad30c3"
+    [35mcity[39m: "New York"
+    error: {}
+[2026-03-24 03:04:44.909 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:44.909 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69c1efba5a8b439a07d73b99"
+    [35mcity[39m: "Warsaw, Masovian, Poland"
+    error: {}
+[2026-03-24 03:04:45.310 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:45.310 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69c1efc55a8b439a07d73b9c"
+    [35mcity[39m: "Warsaw, Masovian, Poland"
+    error: {}
+[2026-03-24 03:04:45.709 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:45.709 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69c1efd35a8b439a07d73b9f"
+    [35mcity[39m: "Warsaw, Masovian, Poland"
+    error: {}
+[2026-03-24 03:04:46.103 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:46.103 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69c1efdf5a8b439a07d73ba2"
+    [35mcity[39m: "Warsaw, Masovian, Poland"
+    error: {}
+[2026-03-24 03:04:46.513 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:46.513 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69c1efec5a8b439a07d73ba5"
+    [35mcity[39m: "Warsaw, Masovian, Poland"
+    error: {}
+[2026-03-24 03:04:46.929 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:04:46.929 +0100] [31mERROR[39m (23252): [36mdaily transit generation failed for user[39m
+    [35muserId[39m: "69c1effc5a8b439a07d73ba8"
+    [35mcity[39m: "Warsaw, Masovian, Poland"
+    error: {}
+[2026-03-24 03:04:46.929 +0100] [32mINFO[39m (23252): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-24"
+    [35mtotalProfiles[39m: 15
+    [35mgenerated[39m: 0
+    [35mcached[39m: 0
+    [35mfailed[39m: 15
+[2026-03-24 03:04:46.929 +0100] [32mINFO[39m (23252): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 75313071
+[2026-03-24 03:04:55.914 +0100] [32mINFO[39m (23252): [36mincoming request[39m
+    [35mreqId[39m: "req-1"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/health",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 52495
+    }
+[2026-03-24 03:04:55.918 +0100] [32mINFO[39m (23252): [36mrequest completed[39m
+    [35mreqId[39m: "req-1"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.4078000001609325
+[2026-03-24 03:05:20.520 +0100] [32mINFO[39m (23252): [36mincoming request[39m
+    [35mreqId[39m: "req-2"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/auth/anonymous",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 59436
+    }
+[2026-03-24 03:05:20.778 +0100] [32mINFO[39m (23252): [36mrequest completed[39m
+    [35mreqId[39m: "req-2"
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 258.4587000012398
+[2026-03-24 03:05:30.355 +0100] [32mINFO[39m (23252): [36mincoming request[39m
+    [35mreqId[39m: "req-3"
+    [35mreq[39m: {
+      "method": "PUT",
+      "url": "/api/astrology/birth-profile",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 59788
+    }
+[2026-03-24 03:05:30.362 +0100] [32mINFO[39m (23252): [36mBody is not valid JSON but content-type is set to 'application/json'[39m
+    [35mreqId[39m: "req-3"
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    err: {
+      "type": "FastifyError",
+      "message": "Body is not valid JSON but content-type is set to 'application/json'",
+      "stack":
+          FastifyError: Body is not valid JSON but content-type is set to 'application/json'
+              at Parser.defaultJsonParser [as fn] (C:\Users\p1vzz\WebstormProjects\horojob-server\node_modules\fastify\lib\content-type-parser.js:319:12)
+              at IncomingMessage.onEnd (C:\Users\p1vzz\WebstormProjects\horojob-server\node_modules\fastify\lib\content-type-parser.js:299:27)
+              at IncomingMessage.emit (node:events:519:28)
+              at endReadableNT (node:internal/streams/readable:1698:12)
+              at process.processTicksAndRejections (node:internal/process/task_queues:89:21)
+      "code": "FST_ERR_CTP_INVALID_JSON_BODY",
+      "name": "FastifyError",
+      "statusCode": 400
+    }
+[2026-03-24 03:05:30.364 +0100] [32mINFO[39m (23252): [36mrequest completed[39m
+    [35mreqId[39m: "req-3"
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 8.808200001716614
+[2026-03-24 03:05:37.713 +0100] [32mINFO[39m (23252): [36mincoming request[39m
+    [35mreqId[39m: "req-4"
+    [35mreq[39m: {
+      "method": "PUT",
+      "url": "/api/astrology/birth-profile",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 59793
+    }
+[2026-03-24 03:05:38.197 +0100] [32mINFO[39m (23252): [36mrequest completed[39m
+    [35mreqId[39m: "req-4"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 484.2727999985218
+[2026-03-24 03:05:47.503 +0100] [32mINFO[39m (23252): [36mincoming request[39m
+    [35mreqId[39m: "req-5"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/astrology/natal-chart",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 65355
+    }
+[2026-03-24 03:05:48.612 +0100] [31mERROR[39m (23252): [36mtimezone_with_dst failed[39m
+    [35mreqId[39m: "req-5"
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:05:48.612 +0100] [32mINFO[39m (23252): [36mrequest completed[39m
+    [35mreqId[39m: "req-5"
+    [35mres[39m: {
+      "statusCode": 502
+    }
+    [35mresponseTime[39m: 1109.0803999975324
+[2026-03-24 03:05:48.889 +0100] [32mINFO[39m (23252): [36mincoming request[39m
+    [35mreqId[39m: "req-6"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/astrology/daily-transit",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 65360
+    }
+[2026-03-24 03:05:49.790 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mreqId[39m: "req-6"
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:05:49.790 +0100] [31mERROR[39m (23252): [36mdaily transit request failed[39m
+    [35mreqId[39m: "req-6"
+    error: {}
+[2026-03-24 03:05:49.791 +0100] [32mINFO[39m (23252): [36mrequest completed[39m
+    [35mreqId[39m: "req-6"
+    [35mres[39m: {
+      "statusCode": 502
+    }
+    [35mresponseTime[39m: 901.2267000004649
+[2026-03-24 03:05:50.042 +0100] [32mINFO[39m (23252): [36mincoming request[39m
+    [35mreqId[39m: "req-7"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/astrology/morning-briefing?refresh=true",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 65362
+    }
+[2026-03-24 03:05:51.043 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mreqId[39m: "req-7"
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:05:51.043 +0100] [31mERROR[39m (23252): [36mmorning briefing request failed[39m
+    [35mreqId[39m: "req-7"
+    error: {}
+[2026-03-24 03:05:51.043 +0100] [32mINFO[39m (23252): [36mrequest completed[39m
+    [35mreqId[39m: "req-7"
+    [35mres[39m: {
+      "statusCode": 502
+    }
+    [35mresponseTime[39m: 1001.1086999997497
+[2026-03-24 03:09:43.262 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:09:43.262 +0100] [31mERROR[39m (23252): [36mburnout planner failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    error: {}
+[2026-03-24 03:09:43.262 +0100] [32mINFO[39m (23252): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 0
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 1
+    [35mskipReasons[39m: {}
+[2026-03-24 03:14:40.776 +0100] [32mINFO[39m (23252): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-23T02:14:40.655Z",
+      "to": "2026-03-24T02:14:40.655Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-24 03:14:44.656 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:14:44.656 +0100] [31mERROR[39m (23252): [36mburnout planner failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    error: {}
+[2026-03-24 03:14:44.656 +0100] [32mINFO[39m (23252): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 0
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 1
+    [35mskipReasons[39m: {}
+[2026-03-24 03:19:45.899 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:19:45.900 +0100] [31mERROR[39m (23252): [36mburnout planner failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    error: {}
+[2026-03-24 03:19:45.900 +0100] [32mINFO[39m (23252): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 0
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 1
+    [35mskipReasons[39m: {}
+[2026-03-24 03:24:40.909 +0100] [32mINFO[39m (23252): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-23T02:24:40.790Z",
+      "to": "2026-03-24T02:24:40.790Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-24 03:24:47.236 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:24:47.236 +0100] [31mERROR[39m (23252): [36mburnout planner failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    error: {}
+[2026-03-24 03:24:47.236 +0100] [32mINFO[39m (23252): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 0
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 1
+    [35mskipReasons[39m: {}
+[2026-03-24 03:29:48.472 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:29:48.472 +0100] [31mERROR[39m (23252): [36mburnout planner failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    error: {}
+[2026-03-24 03:29:48.472 +0100] [32mINFO[39m (23252): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 0
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 1
+    [35mskipReasons[39m: {}
+[2026-03-24 03:34:41.043 +0100] [32mINFO[39m (23252): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-23T02:34:40.919Z",
+      "to": "2026-03-24T02:34:40.919Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-24 03:34:49.837 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:34:49.837 +0100] [31mERROR[39m (23252): [36mburnout planner failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    error: {}
+[2026-03-24 03:34:49.837 +0100] [32mINFO[39m (23252): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 0
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 1
+    [35mskipReasons[39m: {}
+[2026-03-24 03:39:51.213 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:39:51.213 +0100] [31mERROR[39m (23252): [36mburnout planner failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    error: {}
+[2026-03-24 03:39:51.213 +0100] [32mINFO[39m (23252): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 0
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 1
+    [35mskipReasons[39m: {}
+[2026-03-24 03:44:41.162 +0100] [32mINFO[39m (23252): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-23T02:44:41.044Z",
+      "to": "2026-03-24T02:44:41.044Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-24 03:44:52.448 +0100] [31mERROR[39m (23252): [36mdaily transit timezone_with_dst failed[39m
+    [35mstatus[39m: 401
+    [35mbody[39m: "{\"status\":false,\"msg\":\"Your API key is either expired or invalid. Kindy use a valid API Key and User ID combination.\"}"
+[2026-03-24 03:44:52.448 +0100] [31mERROR[39m (23252): [36mburnout planner failed for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    error: {}
+[2026-03-24 03:44:52.448 +0100] [32mINFO[39m (23252): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 0
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 1
+    [35mskipReasons[39m: {}
+03:45:54 [tsx] change in ./src\routes\astrology.ts Restarting...
+c03:46:03 [tsx] change in ./src\services\dailyTransit.ts Restarting...
+c[2026-03-24 03:46:14.245 +0100] [32mINFO[39m (41168): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-24 03:46:14.245 +0100] [32mINFO[39m (41168): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-24 03:46:14.245 +0100] [32mINFO[39m (41168): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-24 03:46:14.246 +0100] [32mINFO[39m (41168): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-24 03:46:14.246 +0100] [32mINFO[39m (41168): [36mburnout alert scheduler started[39m
+    [35mintervalSeconds[39m: 300
+    [35mminScore[39m: 55
+    [35mscheduleDelaySeconds[39m: 120
+[2026-03-24 03:46:14.246 +0100] [32mINFO[39m (41168): [36minterview strategy scheduler started[39m
+    [35mintervalSeconds[39m: 86400
+    [35mthresholdDays[39m: 14
+    [35mrefillDays[39m: 14
+    [35minitialHorizonDays[39m: 30
+[2026-03-24 03:46:15.119 +0100] [32mINFO[39m (41168): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-23T02:46:14.246Z",
+      "to": "2026-03-24T02:46:14.246Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-24 03:46:15.930 +0100] [32mINFO[39m (41168): [36minterview strategy scheduler cycle finished[39m
+    [35mcandidates[39m: 1
+    [35mgenerated[39m: 0
+    [35mskipped[39m: 1
+    [35mnotPremium[39m: 0
+    [35mfailed[39m: 0
+    [35mthresholdDays[39m: 14
+    [35mrefillDays[39m: 14
+[2026-03-24 03:46:21.620 +0100] [32mINFO[39m (41168): [36mburnout planner skipped for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    [35mreason[39m: "risk below threshold"
+    [35mseverity[39m: "none"
+    [35mriskScore[39m: 26
+    [35mminScore[39m: 55
+[2026-03-24 03:46:21.620 +0100] [32mINFO[39m (41168): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 1
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 0
+    [35mskipReasons[39m: {
+      "risk below threshold": 1
+    }
+03:46:24 [tsx] change in ./src\routes\astrology.ts Restarting...
+c03:46:27 [tsx] change in ./src\services\dailyTransit.ts Restarting...
+c[2026-03-24 03:46:38.294 +0100] [32mINFO[39m (26392): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-24 03:46:38.294 +0100] [32mINFO[39m (26392): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-24 03:46:38.294 +0100] [32mINFO[39m (26392): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-24 03:46:38.294 +0100] [32mINFO[39m (26392): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-24 03:46:38.295 +0100] [32mINFO[39m (26392): [36mburnout alert scheduler started[39m
+    [35mintervalSeconds[39m: 300
+    [35mminScore[39m: 55
+    [35mscheduleDelaySeconds[39m: 120
+[2026-03-24 03:46:38.295 +0100] [32mINFO[39m (26392): [36minterview strategy scheduler started[39m
+    [35mintervalSeconds[39m: 86400
+    [35mthresholdDays[39m: 14
+    [35mrefillDays[39m: 14
+    [35minitialHorizonDays[39m: 30
+[2026-03-24 03:46:39.176 +0100] [32mINFO[39m (26392): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-23T02:46:38.295Z",
+      "to": "2026-03-24T02:46:38.295Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-24 03:46:39.300 +0100] [32mINFO[39m (26392): [36minterview strategy scheduler cycle finished[39m
+    [35mcandidates[39m: 1
+    [35mgenerated[39m: 0
+    [35mskipped[39m: 1
+    [35mnotPremium[39m: 0
+    [35mfailed[39m: 0
+    [35mthresholdDays[39m: 14
+    [35mrefillDays[39m: 14
+[2026-03-24 03:46:40.246 +0100] [32mINFO[39m (26392): [36mburnout planner skipped for user[39m
+    [35muserId[39m: "69bcaa45c52570cbb89ae73a"
+    [35mreason[39m: "risk below threshold"
+    [35mseverity[39m: "none"
+    [35mriskScore[39m: 26
+    [35mminScore[39m: 55
+[2026-03-24 03:46:40.247 +0100] [32mINFO[39m (26392): [36mburnout planner cycle finished[39m
+    [35menabledUsers[39m: 1
+    [35mplanned[39m: 0
+    [35mskipped[39m: 1
+    [35malreadyPlanned[39m: 0
+    [35malreadySent[39m: 0
+    [35mfailed[39m: 0
+    [35mskipReasons[39m: {
+      "risk below threshold": 1
+    }
+[2026-03-24 03:46:41.303 +0100] [32mINFO[39m (26392): [36mincoming request[39m
+    [35mreqId[39m: "req-1"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/auth/anonymous",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 50150
+    }
+[2026-03-24 03:46:41.565 +0100] [32mINFO[39m (26392): [36mrequest completed[39m
+    [35mreqId[39m: "req-1"
+    [35mres[39m: {
+      "statusCode": 201
+    }
+    [35mresponseTime[39m: 261.45160000026226
+[2026-03-24 03:46:48.514 +0100] [32mINFO[39m (26392): [36mincoming request[39m
+    [35mreqId[39m: "req-2"
+    [35mreq[39m: {
+      "method": "PUT",
+      "url": "/api/astrology/birth-profile",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 65374
+    }
+[2026-03-24 03:46:48.996 +0100] [32mINFO[39m (26392): [36mrequest completed[39m
+    [35mreqId[39m: "req-2"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 481.7905999980867
+[2026-03-24 03:46:58.113 +0100] [32mINFO[39m (26392): [36mincoming request[39m
+    [35mreqId[39m: "req-3"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/astrology/natal-chart",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 63888
+    }
+[2026-03-24 03:46:59.730 +0100] [32mINFO[39m (26392): [36mrequest completed[39m
+    [35mreqId[39m: "req-3"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1617.5404000021517
+[2026-03-24 03:46:59.948 +0100] [32mINFO[39m (26392): [36mincoming request[39m
+    [35mreqId[39m: "req-4"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/astrology/daily-transit",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 63894
+    }
+[2026-03-24 03:47:06.121 +0100] [32mINFO[39m (26392): [36mrequest completed[39m
+    [35mreqId[39m: "req-4"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 6172.921800002456
+[2026-03-24 03:47:06.348 +0100] [32mINFO[39m (26392): [36mincoming request[39m
+    [35mreqId[39m: "req-5"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/astrology/morning-briefing?refresh=true",
+      "host": "localhost:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 51845
+    }
+[2026-03-24 03:47:07.501 +0100] [32mINFO[39m (26392): [36mrequest completed[39m
+    [35mreqId[39m: "req-5"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1153.133900001645
+[2026-03-24 03:48:00.469 +0100] [32mINFO[39m (26392): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-24"
+    [35mtotalProfiles[39m: 16
+    [35mgenerated[39m: 13
+    [35mcached[39m: 3
+    [35mfailed[39m: 0
+[2026-03-24 03:48:00.469 +0100] [32mINFO[39m (26392): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 72719531
+
+C:\Users\p1vzz\WebstormProjects\horojob-server>

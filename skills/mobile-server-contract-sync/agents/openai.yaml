@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mobile-Server Contract Sync"
+  short_description: "Coordinate client and backend API contracts safely"
+  default_prompt: "Use $mobile-server-contract-sync to coordinate this mobile and backend contract change."

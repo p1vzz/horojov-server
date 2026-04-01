@@ -1,0 +1,55 @@
+
+> horojob-server@1.0.0 dev
+> tsx watch src/server.ts
+
+[2026-03-20 02:48:44.559 +0100] [32mINFO[39m (35508): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-20 02:48:44.559 +0100] [32mINFO[39m (35508): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-20 02:48:44.560 +0100] [32mINFO[39m (35508): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-20 02:48:44.560 +0100] [32mINFO[39m (35508): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-20 02:48:45.395 +0100] [32mINFO[39m (35508): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-19T01:48:44.560Z",
+      "to": "2026-03-20T01:48:44.560Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-20 02:48:47.240 +0100] [32mINFO[39m (35508): [36mincoming request[39m
+    [35mreqId[39m: "req-1"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/health",
+      "host": "127.0.0.1:8787",
+      "remoteAddress": "127.0.0.1",
+      "remotePort": 57373
+    }
+[2026-03-20 02:48:47.243 +0100] [32mINFO[39m (35508): [36mrequest completed[39m
+    [35mreqId[39m: "req-1"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 3.040700003504753
+[2026-03-20 02:48:47.259 +0100] [32mINFO[39m (35508): [36mincoming request[39m
+    [35mreqId[39m: "req-2"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/health",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.45",
+      "remotePort": 57374
+    }
+[2026-03-20 02:48:47.259 +0100] [32mINFO[39m (35508): [36mrequest completed[39m
+    [35mreqId[39m: "req-2"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 0.35100000351667404
+[2026-03-20 02:49:22.353 +0100] [32mINFO[39m (35508): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-20"
+    [35mtotalProfiles[39m: 7
+    [35mgenerated[39m: 7
+    [35mcached[39m: 0
+    [35mfailed[39m: 0
+[2026-03-20 02:49:22.354 +0100] [32mINFO[39m (35508): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 76237647

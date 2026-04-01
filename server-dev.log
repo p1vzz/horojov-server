@@ -1,0 +1,452 @@
+
+> horojob-server@1.0.0 dev
+> tsx watch src/server.ts
+
+[2026-03-19 01:39:51.402 +0100] [32mINFO[39m (27296): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-19 01:39:51.402 +0100] [32mINFO[39m (27296): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-19 01:39:51.402 +0100] [32mINFO[39m (27296): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-19 01:39:51.403 +0100] [32mINFO[39m (27296): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-19 01:39:52.239 +0100] [32mINFO[39m (27296): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T00:39:51.403Z",
+      "to": "2026-03-19T00:39:51.403Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 01:39:56.446 +0100] [32mINFO[39m (27296): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-19"
+    [35mtotalProfiles[39m: 7
+    [35mgenerated[39m: 7
+    [35mcached[39m: 0
+    [35mfailed[39m: 0
+[2026-03-19 01:39:56.446 +0100] [32mINFO[39m (27296): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 80403554
+[2026-03-19 01:41:48.640 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-1"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/cities/search?query=Warsaw&count=6&language=en",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 49636
+    }
+[2026-03-19 01:41:48.780 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-1"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 139.55709999799728
+[2026-03-19 01:44:26.077 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-2"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/cities/search?query=Warsawa&count=6&language=en",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 47274
+    }
+[2026-03-19 01:44:26.207 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-2"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 129.6811999976635
+[2026-03-19 01:44:48.534 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-3"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/cities/search?query=Warsaw&count=6&language=en",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 47274
+    }
+[2026-03-19 01:44:48.663 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-3"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 129.3867999985814
+[2026-03-19 01:45:59.785 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-4"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/cities/search?query=Warsaww&count=6&language=en",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 47274
+    }
+[2026-03-19 01:45:59.910 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-4"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 125.06819999963045
+[2026-03-19 01:46:42.895 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-5"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/cities/search?query=Warsaw&count=6&language=en",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 47274
+    }
+[2026-03-19 01:46:43.018 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-5"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 122.6338000036776
+[2026-03-19 01:47:06.960 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-6"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/auth/refresh",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 47274
+    }
+[2026-03-19 01:47:07.445 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-6"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 484.6427999995649
+[2026-03-19 01:47:07.564 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-7"
+    [35mreq[39m: {
+      "method": "PUT",
+      "url": "/api/astrology/birth-profile",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 47274
+    }
+[2026-03-19 01:47:08.032 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-7"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 467.5223000012338
+[2026-03-19 01:47:08.208 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-8"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/astrology/daily-transit",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 47274
+    }
+[2026-03-19 01:47:09.806 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-8"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 1598.7100999988616
+[2026-03-19 01:49:52.363 +0100] [32mINFO[39m (27296): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T00:49:52.243Z",
+      "to": "2026-03-19T00:49:52.243Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 01:52:53.257 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-9"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/jobs/preflight",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 59844
+    }
+[2026-03-19 01:52:53.637 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-9"
+    [35mres[39m: {
+      "statusCode": 400
+    }
+    [35mresponseTime[39m: 379.7955999970436
+[2026-03-19 01:53:24.390 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-a"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/jobs/preflight",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 59844
+    }
+[2026-03-19 01:53:25.238 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-a"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 848.5701000019908
+[2026-03-19 01:53:25.314 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-b"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/jobs/analyze",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 59844
+    }
+[2026-03-19 01:53:25.915 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-b"
+    [35mres[39m: {
+      "statusCode": 404
+    }
+    [35mresponseTime[39m: 601.0902000032365
+[2026-03-19 01:55:51.860 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-c"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/jobs/preflight",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 59934
+    }
+[2026-03-19 01:55:52.705 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-c"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 845.0965000018477
+[2026-03-19 01:55:52.770 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-d"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/jobs/analyze",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 59934
+    }
+[2026-03-19 01:55:53.492 +0100] [33mWARN[39m (27296): [36minvalidating cached challenge payload before analyze[39m
+    [35mreqId[39m: "req-d"
+    [35msource[39m: "glassdoor"
+    [35mcanonicalUrlHash[39m: "77065f9f6f0eaeb1c1f86e7f6a2dd0c5880ec98233272e5b2746b950870b28c8"
+    [35mtitle[39m: "Just a moment..."
+[2026-03-19 01:56:06.185 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-d"
+    [35mres[39m: {
+      "statusCode": 429
+    }
+    [35mresponseTime[39m: 13414.141400001943
+[2026-03-19 01:58:32.941 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-e"
+    [35mreq[39m: {
+      "method": "POST",
+      "url": "/api/jobs/preflight",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 48176
+    }
+[2026-03-19 01:58:33.672 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-e"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 730.8656000010669
+[2026-03-19 01:59:52.491 +0100] [32mINFO[39m (27296): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T00:59:52.370Z",
+      "to": "2026-03-19T00:59:52.370Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:00:41.873 +0100] [32mINFO[39m (27296): [36mincoming request[39m
+    [35mreqId[39m: "req-f"
+    [35mreq[39m: {
+      "method": "GET",
+      "url": "/api/astrology/daily-transit",
+      "host": "192.168.1.45:8787",
+      "remoteAddress": "192.168.1.61",
+      "remotePort": 51680
+    }
+[2026-03-19 02:00:42.491 +0100] [32mINFO[39m (27296): [36mrequest completed[39m
+    [35mreqId[39m: "req-f"
+    [35mres[39m: {
+      "statusCode": 200
+    }
+    [35mresponseTime[39m: 617.3568999990821
+[2026-03-19 02:09:52.625 +0100] [32mINFO[39m (27296): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:09:52.503Z",
+      "to": "2026-03-19T01:09:52.503Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:19:52.753 +0100] [32mINFO[39m (27296): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:19:52.631Z",
+      "to": "2026-03-19T01:19:52.631Z"
+    }
+    [35mcheckedSources[39m: 5
+02:20:46 [tsx] change in ./src\db\mongo.ts Restarting...
+c[2026-03-19 02:21:02.970 +0100] [32mINFO[39m (47972): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-19 02:21:02.971 +0100] [32mINFO[39m (47972): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-19 02:21:02.971 +0100] [32mINFO[39m (47972): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-19 02:21:02.971 +0100] [32mINFO[39m (47972): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-19 02:21:03.863 +0100] [32mINFO[39m (47972): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:21:02.971Z",
+      "to": "2026-03-19T01:21:02.971Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:21:04.065 +0100] [32mINFO[39m (47972): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-19"
+    [35mtotalProfiles[39m: 7
+    [35mgenerated[39m: 0
+    [35mcached[39m: 7
+    [35mfailed[39m: 0
+[2026-03-19 02:21:04.066 +0100] [32mINFO[39m (47972): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 77935934
+02:30:24 [tsx] change in ./src\routes\astrology.ts Restarting...
+c[2026-03-19 02:30:30.970 +0100] [32mINFO[39m (27336): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-19 02:30:30.971 +0100] [32mINFO[39m (27336): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-19 02:30:30.971 +0100] [32mINFO[39m (27336): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-19 02:30:30.971 +0100] [32mINFO[39m (27336): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-19 02:30:31.853 +0100] [32mINFO[39m (27336): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:30:30.971Z",
+      "to": "2026-03-19T01:30:30.971Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:30:32.008 +0100] [32mINFO[39m (27336): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-19"
+    [35mtotalProfiles[39m: 7
+    [35mgenerated[39m: 0
+    [35mcached[39m: 7
+    [35mfailed[39m: 0
+[2026-03-19 02:30:32.008 +0100] [32mINFO[39m (27336): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 77367992
+02:33:16 [tsx] change in ./src\services\discoverRoles.ts Restarting...
+c[2026-03-19 02:33:22.836 +0100] [32mINFO[39m (48636): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-19 02:33:22.837 +0100] [32mINFO[39m (48636): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-19 02:33:22.837 +0100] [32mINFO[39m (48636): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-19 02:33:22.837 +0100] [32mINFO[39m (48636): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-19 02:33:23.716 +0100] [32mINFO[39m (48636): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:33:22.837Z",
+      "to": "2026-03-19T01:33:22.837Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:33:23.877 +0100] [32mINFO[39m (48636): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-19"
+    [35mtotalProfiles[39m: 7
+    [35mgenerated[39m: 0
+    [35mcached[39m: 7
+    [35mfailed[39m: 0
+[2026-03-19 02:33:23.878 +0100] [32mINFO[39m (48636): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 77196122
+02:33:57 [tsx] change in ./src\services\discoverRoles.ts Restarting...
+c[2026-03-19 02:34:03.870 +0100] [32mINFO[39m (45864): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-19 02:34:03.870 +0100] [32mINFO[39m (45864): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-19 02:34:03.870 +0100] [32mINFO[39m (45864): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-19 02:34:03.870 +0100] [32mINFO[39m (45864): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-19 02:34:04.768 +0100] [32mINFO[39m (45864): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:34:03.870Z",
+      "to": "2026-03-19T01:34:03.870Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:34:04.901 +0100] [32mINFO[39m (45864): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-19"
+    [35mtotalProfiles[39m: 7
+    [35mgenerated[39m: 0
+    [35mcached[39m: 7
+    [35mfailed[39m: 0
+[2026-03-19 02:34:04.901 +0100] [32mINFO[39m (45864): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 77155099
+02:34:09 [tsx] change in ./src\services\discoverRoles.ts Restarting...
+c[2026-03-19 02:34:16.659 +0100] [32mINFO[39m (49156): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-19 02:34:16.659 +0100] [32mINFO[39m (49156): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-19 02:34:16.659 +0100] [32mINFO[39m (49156): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-19 02:34:16.659 +0100] [32mINFO[39m (49156): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-19 02:34:17.564 +0100] [32mINFO[39m (49156): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:34:16.660Z",
+      "to": "2026-03-19T01:34:16.660Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:34:17.736 +0100] [32mINFO[39m (49156): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-19"
+    [35mtotalProfiles[39m: 7
+    [35mgenerated[39m: 0
+    [35mcached[39m: 7
+    [35mfailed[39m: 0
+[2026-03-19 02:34:17.736 +0100] [32mINFO[39m (49156): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 77142264
+02:35:12 [tsx] change in ./src\db\mongo.ts Restarting...
+c[2026-03-19 02:35:19.615 +0100] [32mINFO[39m (12936): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-19 02:35:19.615 +0100] [32mINFO[39m (12936): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-19 02:35:19.615 +0100] [32mINFO[39m (12936): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-19 02:35:19.615 +0100] [32mINFO[39m (12936): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-19 02:35:20.517 +0100] [32mINFO[39m (12936): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:35:19.616Z",
+      "to": "2026-03-19T01:35:19.616Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:35:20.649 +0100] [32mINFO[39m (12936): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-19"
+    [35mtotalProfiles[39m: 7
+    [35mgenerated[39m: 0
+    [35mcached[39m: 7
+    [35mfailed[39m: 0
+[2026-03-19 02:35:20.649 +0100] [32mINFO[39m (12936): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 77079351
+02:38:56 [tsx] change in ./src\services\discoverRoles.ts Restarting...
+c[2026-03-19 02:39:03.870 +0100] [32mINFO[39m (15044): [36mServer listening at http://127.0.0.1:8787[39m
+[2026-03-19 02:39:03.870 +0100] [32mINFO[39m (15044): [36mServer listening at http://192.168.1.45:8787[39m
+[2026-03-19 02:39:03.870 +0100] [32mINFO[39m (15044): [36mServer ready on http://0.0.0.0:8787[39m
+[2026-03-19 02:39:03.870 +0100] [32mINFO[39m (15044): [36mjob metrics alert scheduler started[39m
+    [35mintervalSeconds[39m: 600
+    [35mwindowHours[39m: 24
+[2026-03-19 02:39:04.742 +0100] [32mINFO[39m (15044): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:39:03.870Z",
+      "to": "2026-03-19T01:39:03.870Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:39:04.910 +0100] [32mINFO[39m (15044): [36mdaily transit startup warmup finished[39m
+    [35mdateKey[39m: "2026-03-19"
+    [35mtotalProfiles[39m: 7
+    [35mgenerated[39m: 0
+    [35mcached[39m: 7
+    [35mfailed[39m: 0
+[2026-03-19 02:39:04.910 +0100] [32mINFO[39m (15044): [36mdaily transit scheduler armed for next midnight[39m
+    [35mdelayMs[39m: 76855090
+[2026-03-19 02:49:04.871 +0100] [32mINFO[39m (15044): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:49:04.749Z",
+      "to": "2026-03-19T01:49:04.749Z"
+    }
+    [35mcheckedSources[39m: 5
+[2026-03-19 02:59:04.999 +0100] [32mINFO[39m (15044): [36mjob metrics check finished without alerts[39m
+    [35mwindow[39m: {
+      "hours": 24,
+      "from": "2026-03-18T01:59:04.880Z",
+      "to": "2026-03-19T01:59:04.880Z"
+    }
+    [35mcheckedSources[39m: 5
+^C

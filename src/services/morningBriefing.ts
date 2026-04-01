@@ -1,0 +1,254 @@
+import { ObjectId } from 'mongodb';
+import type { FastifyBaseLogger } from 'fastify';
+import {
+  getCollections,
+  type MorningBriefingDailyDoc,
+  type MongoCollections,
+  type AlgorithmTagDoc,
+  type AiSynergyConfidenceBreakdownDoc,
+} from '../db/mongo.js';
+import { getOrCreateDailyTransitForUser } from './dailyTransit.js';
+
+const MORNING_BRIEFING_SCHEMA_VERSION = 'morning-briefing-v2';
+
+export type MorningBriefingView = {
+  dateKey: string;
+  cached: boolean;
+  generatedAt: string;
+  schemaVersion: string;
+  headline: string;
+  summary: string;
+  metrics: {
+    energy: number;
+    focus: number;
+    luck: number;
+    aiSynergy: number;
+  };
+  modeLabel: string;
+  insights?: {
+    vibe: {
+      algorithmVersion: string;
+      drivers: string[];
+      cautions: string[];
+      tags: AlgorithmTagDoc[];
+    };
+    aiSynergy: {
+      algorithmVersion: string;
+      band: 'peak' | 'strong' | 'stable' | 'volatile';
+      confidence: number;
+      confidenceBreakdown: AiSynergyConfidenceBreakdownDoc;
+      drivers: string[];
+      cautions: string[];
+      actionsPriority: string[];
+      tags: AlgorithmTagDoc[];
+      narrativeVariantId: string;
+      styleProfile: string;
+    };
+  };
+  staleAfter: string;
+  sources: {
+    dailyTransitDateKey: string;
+    aiSynergyDateKey: string | null;
+  };
+};
+
+export type EnsureMorningBriefingResult = {
+  item: MorningBriefingView;
+  cached: boolean;
+};
+
+function toDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function clampScore(value: number) {
+  return Math.max(10, Math.min(99, Math.round(value)));
+}
+
+function deriveFallbackAiSynergy(metrics: { energy: number; focus: number; luck: number }) {
+  const weighted = metrics.energy * 0.34 + metrics.focus * 0.44 + metrics.luck * 0.22;
+  const coherenceBoost = (metrics.focus - metrics.energy) * 0.06;
+  return clampScore(weighted + coherenceBoost);
+}
+
+function buildStaleAfter(dateKey: string, fallbackBase: Date) {
+  const midnightUtc = new Date(`${dateKey}T00:00:00.000Z`);
+  if (Number.isNaN(midnightUtc.getTime())) {
+    return new Date(fallbackBase.getTime() + 24 * 60 * 60 * 1000);
+  }
+  midnightUtc.setUTCDate(midnightUtc.getUTCDate() + 1);
+  return midnightUtc;
+}
+
+function toMorningBriefingView(doc: MorningBriefingDailyDoc, cached: boolean): MorningBriefingView {
+  return {
+    dateKey: doc.dateKey,
+    cached,
+    generatedAt: doc.generatedAt.toISOString(),
+    schemaVersion: doc.schemaVersion,
+    headline: doc.headline,
+    summary: doc.summary,
+    metrics: {
+      energy: doc.metrics.energy,
+      focus: doc.metrics.focus,
+      luck: doc.metrics.luck,
+      aiSynergy: doc.metrics.aiSynergy,
+    },
+    modeLabel: doc.modeLabel,
+    insights: doc.insights,
+    staleAfter: doc.staleAfter.toISOString(),
+    sources: {
+      dailyTransitDateKey: doc.sources.dailyTransitDateKey,
+      aiSynergyDateKey: doc.sources.aiSynergyDateKey,
+    },
+  };
+}
+
+export async function getOrCreateMorningBriefingForUser(input: {
+  userId: ObjectId;
+  date: Date;
+  logger: FastifyBaseLogger;
+  refresh?: boolean;
+  collections?: MongoCollections;
+}): Promise<EnsureMorningBriefingResult> {
+  const collections = input.collections ?? (await getCollections());
+  const profile = await collections.birthProfiles.findOne({ userId: input.userId });
+  if (!profile) {
+    throw new Error('Birth profile not found');
+  }
+
+  const dateKey = toDateKey(input.date);
+  const filter = {
+    userId: input.userId,
+    profileHash: profile.profileHash,
+    dateKey,
+    schemaVersion: MORNING_BRIEFING_SCHEMA_VERSION,
+  };
+
+  if (!input.refresh) {
+    const existing = await collections.morningBriefingDaily.findOne(filter);
+    if (existing) {
+      return {
+        item: toMorningBriefingView(existing, true),
+        cached: true,
+      };
+    }
+  }
+
+  const transit = await getOrCreateDailyTransitForUser(input.userId, input.date, input.logger);
+  const now = new Date();
+
+  const energy = clampScore(transit.doc.vibe.metrics.energy);
+  const focus = clampScore(transit.doc.vibe.metrics.focus);
+  const luck = clampScore(transit.doc.vibe.metrics.luck);
+  const aiSynergy = transit.aiSynergy?.score ?? deriveFallbackAiSynergy({ energy, focus, luck });
+  const aiBand = transit.aiSynergy?.band ?? (aiSynergy >= 88 ? 'peak' : aiSynergy >= 76 ? 'strong' : aiSynergy >= 64 ? 'stable' : 'volatile');
+  const aiConfidence = transit.aiSynergy?.confidence ?? clampScore(54 + (focus - Math.abs(energy - luck)) * 0.4);
+  const aiConfidenceBreakdown: AiSynergyConfidenceBreakdownDoc =
+    transit.aiSynergy?.confidenceBreakdown ?? {
+      dataQuality: aiConfidence,
+      coherence: aiConfidence,
+      stability: aiConfidence,
+    };
+  const aiDrivers = transit.aiSynergy?.drivers ?? [
+    'Fallback AI synergy was derived from core transit metrics.',
+    'Focus-weighted coherence contributed most to today\'s AI alignment.',
+    'Use explicit review gates for high-impact outputs.',
+  ];
+  const aiCautions = transit.aiSynergy?.cautions ?? [
+    'Fallback mode has lower signal richness than full synergy pipeline.',
+    'Validate generated outputs before external sharing.',
+    'Avoid broad prompts when execution pressure is high.',
+  ];
+  const aiActionsPriority = transit.aiSynergy?.actionsPriority ?? [
+    'Start with one bounded automation block.',
+    'Convert outputs into explicit next actions.',
+    'Schedule a final human approval checkpoint.',
+  ];
+  const aiTags = transit.aiSynergy?.tags ?? [];
+  const vibeDrivers = transit.doc.vibe.drivers ?? [];
+  const vibeCautions = transit.doc.vibe.cautions ?? [];
+  const vibeTags = transit.doc.vibe.tags ?? [];
+
+  const generatedDoc: MorningBriefingDailyDoc = {
+    _id: new ObjectId(),
+    userId: input.userId,
+    profileHash: profile.profileHash,
+    dateKey,
+    schemaVersion: MORNING_BRIEFING_SCHEMA_VERSION,
+    headline: transit.aiSynergy?.headline?.trim() || transit.doc.vibe.title,
+    summary: transit.aiSynergy?.summary?.trim() || transit.doc.vibe.summary,
+    modeLabel: transit.doc.vibe.modeLabel,
+    metrics: {
+      energy,
+      focus,
+      luck,
+      aiSynergy: clampScore(aiSynergy),
+    },
+    insights: {
+      vibe: {
+        algorithmVersion: transit.doc.vibe.algorithmVersion,
+        drivers: vibeDrivers,
+        cautions: vibeCautions,
+        tags: vibeTags,
+      },
+      aiSynergy: {
+        algorithmVersion: transit.aiSynergy?.algorithmVersion ?? 'ai-synergy-fallback-v2',
+        band: aiBand,
+        confidence: aiConfidence,
+        confidenceBreakdown: aiConfidenceBreakdown,
+        drivers: aiDrivers,
+        cautions: aiCautions,
+        actionsPriority: aiActionsPriority,
+        tags: aiTags,
+        narrativeVariantId: transit.aiSynergy?.narrativeVariantId ?? 'fallback-stable-00',
+        styleProfile: transit.aiSynergy?.styleProfile ?? 'analytical',
+      },
+    },
+    sources: {
+      dailyTransitDateKey: transit.doc.dateKey,
+      aiSynergyDateKey: transit.aiSynergy?.dateKey ?? null,
+    },
+    generatedAt: now,
+    staleAfter: buildStaleAfter(dateKey, now),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const persisted = await collections.morningBriefingDaily.findOneAndUpdate(
+    filter,
+    {
+      $set: {
+        headline: generatedDoc.headline,
+        summary: generatedDoc.summary,
+        modeLabel: generatedDoc.modeLabel,
+        metrics: generatedDoc.metrics,
+        insights: generatedDoc.insights,
+        sources: generatedDoc.sources,
+        generatedAt: generatedDoc.generatedAt,
+        staleAfter: generatedDoc.staleAfter,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        _id: generatedDoc._id,
+        createdAt: now,
+      },
+    },
+    { upsert: true, returnDocument: 'after' }
+  );
+
+  if (!persisted) {
+    return {
+      item: toMorningBriefingView(generatedDoc, false),
+      cached: false,
+    };
+  }
+
+  return {
+    item: toMorningBriefingView(persisted, false),
+    cached: false,
+  };
+}
