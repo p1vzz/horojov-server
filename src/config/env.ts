@@ -112,6 +112,7 @@ const envSchema = z.object({
   SCHEDULER_LOCK_DAILY_TRANSIT_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(15 * 60),
   SCHEDULER_LOCK_JOB_METRICS_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(5 * 60),
   SCHEDULER_LOCK_BURNOUT_ALERTS_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(3 * 60),
+  SCHEDULER_LOCK_LUNAR_PRODUCTIVITY_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(3 * 60),
   SCHEDULER_LOCK_INTERVIEW_STRATEGY_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(5 * 60),
   JOB_METRICS_ALERTS_ENABLED: envBoolean.default(true),
   JOB_METRICS_ALERT_WINDOW_HOURS: z.coerce.number().int().min(1).max(24 * 14).default(24),
@@ -125,11 +126,16 @@ const envSchema = z.object({
   BURNOUT_ALERT_PLAN_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
   BURNOUT_ALERT_DISPATCH_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(8),
   BURNOUT_ALERT_MIN_SCORE: z.coerce.number().int().min(0).max(100).default(55),
-  BURNOUT_ALERT_SCHEDULE_DELAY_SECONDS: z.coerce.number().int().min(30).max(60 * 60 * 24).default(120),
   BURNOUT_ALERT_FORCE_SEVERITY: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
     z.enum(['warn', 'high', 'critical']).optional()
   ),
+  LUNAR_PRODUCTIVITY_ALERTS_ENABLED: envBoolean.default(true),
+  LUNAR_PRODUCTIVITY_CHECK_INTERVAL_SECONDS: z.coerce.number().int().min(30).max(60 * 60).default(5 * 60),
+  LUNAR_PRODUCTIVITY_PLAN_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
+  LUNAR_PRODUCTIVITY_DISPATCH_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(8),
+  LUNAR_PRODUCTIVITY_LOW_IMPACT_THRESHOLD: z.coerce.number().int().min(0).max(100).default(25),
+  LUNAR_PRODUCTIVITY_HIGH_IMPACT_THRESHOLD: z.coerce.number().int().min(0).max(100).default(80),
   INTERVIEW_STRATEGY_AUTOFILL_ENABLED: envBoolean.default(true),
   DAILY_TRANSIT_SCHEDULER_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
   INTERVIEW_STRATEGY_SCHEDULER_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
@@ -160,6 +166,21 @@ const parsedEnv = envSchema.safeParse(process.env);
 if (!parsedEnv.success) {
   const issues = parsedEnv.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
   throw new Error(`Invalid environment configuration: ${issues}`);
+}
+
+if (parsedEnv.data.NODE_ENV === 'production' && parsedEnv.data.BURNOUT_ALERT_FORCE_SEVERITY) {
+  throw new Error(
+    'Invalid environment configuration: BURNOUT_ALERT_FORCE_SEVERITY must not be set in production',
+  );
+}
+
+if (
+  parsedEnv.data.LUNAR_PRODUCTIVITY_LOW_IMPACT_THRESHOLD >
+  parsedEnv.data.LUNAR_PRODUCTIVITY_HIGH_IMPACT_THRESHOLD
+) {
+  throw new Error(
+    'Invalid environment configuration: LUNAR_PRODUCTIVITY_LOW_IMPACT_THRESHOLD must be less than or equal to LUNAR_PRODUCTIVITY_HIGH_IMPACT_THRESHOLD',
+  );
 }
 
 const origins = (parsedEnv.data.CORS_ORIGINS ?? '')

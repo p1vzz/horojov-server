@@ -7,12 +7,14 @@ export type SchedulerLockName =
   | 'daily_transit'
   | 'job_metrics'
   | 'burnout_alerts'
+  | 'lunar_productivity'
   | 'interview_strategy';
 
 const SCHEDULER_LOCK_PREFIX: Record<SchedulerLockName, string> = {
   daily_transit: 'lock:daily-transit',
   job_metrics: 'lock:job-metrics',
   burnout_alerts: 'lock:burnout-alerts',
+  lunar_productivity: 'lock:lunar-productivity',
   interview_strategy: 'lock:interview-strategy',
 };
 
@@ -24,6 +26,8 @@ function resolveSchedulerLockTtlMs(scheduler: SchedulerLockName) {
       return env.SCHEDULER_LOCK_JOB_METRICS_TTL_SECONDS * 1000;
     case 'burnout_alerts':
       return env.SCHEDULER_LOCK_BURNOUT_ALERTS_TTL_SECONDS * 1000;
+    case 'lunar_productivity':
+      return env.SCHEDULER_LOCK_LUNAR_PRODUCTIVITY_TTL_SECONDS * 1000;
     case 'interview_strategy':
       return env.SCHEDULER_LOCK_INTERVIEW_STRATEGY_TTL_SECONDS * 1000;
   }

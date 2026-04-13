@@ -1,6 +1,6 @@
 # Backend API And Runtime Map
 **Status:** Active  
-**Last synced:** 2026-03-30
+**Last synced:** 2026-04-12
 
 ## Goal
 
@@ -71,8 +71,10 @@ Provide one current map of backend API surface and runtime orchestration (startu
 - `PUT /push-token`
 - `PUT /burnout-settings` (premium)
 - `GET /burnout-plan` (premium)
+- `POST /burnout-seen` (premium)
 - `PUT /lunar-productivity-settings` (premium)
 - `GET /lunar-productivity-plan` (premium)
+- `POST /lunar-productivity-seen` (premium)
 - `PUT /interview-strategy-settings` (premium)
 - `GET /interview-strategy-plan` (premium)
 
@@ -98,6 +100,7 @@ Provide one current map of backend API surface and runtime orchestration (startu
    - daily transit scheduler
    - job metrics alert scheduler
    - burnout alert scheduler
+   - lunar productivity scheduler
    - interview strategy scheduler
 5. On SIGINT/SIGTERM:
    - stop schedulers
@@ -118,8 +121,8 @@ Provide one current map of backend API surface and runtime orchestration (startu
 
 ## Known Scope Boundary
 
-- Lunar productivity scheduler/push dispatch pipeline is not enabled yet.
-- API routes for lunar settings/plan are now implemented and can be consumed by mobile.
+- Legacy combined runtime remains available for local development and operational fallback.
+- Mobile dashboard/settings UX for lunar scheduling status remains a separate client-side concern.
 
 ## Related Files
 

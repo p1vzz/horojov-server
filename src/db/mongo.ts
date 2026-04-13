@@ -539,9 +539,12 @@ export type BurnoutAlertSeverity = 'warn' | 'high' | 'critical';
 
 export type BurnoutAlertJobStatus = 'planned' | 'sent' | 'failed' | 'skipped' | 'cancelled';
 
+export type BurnoutAlertEventType = 'planned' | 'skipped' | 'cancelled' | 'sent' | 'failed' | 'seen';
+
 export type BurnoutAlertJobDoc = {
   _id: ObjectId;
   userId: ObjectId;
+  profileHash?: string;
   dateKey: string;
   severity: BurnoutAlertSeverity;
   riskScore: number;
@@ -551,11 +554,28 @@ export type BurnoutAlertJobDoc = {
   providerMessageId: string | null;
   lastError: string | null;
   sentAt: Date | null;
+  seenAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
 
+export type BurnoutAlertEventDoc = {
+  _id: ObjectId;
+  userId: ObjectId;
+  jobId: ObjectId | null;
+  profileHash: string | null;
+  dateKey: string | null;
+  type: BurnoutAlertEventType;
+  severity: BurnoutAlertSeverity | null;
+  riskScore: number | null;
+  reason: string | null;
+  providerMessageId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: Date;
+};
+
 export type LunarProductivityRiskSeverity = 'none' | BurnoutAlertSeverity;
+export type LunarProductivityImpactDirection = 'supportive' | 'disruptive';
 
 export type LunarProductivitySettingsDoc = {
   _id: ObjectId;
@@ -573,15 +593,18 @@ export type LunarProductivitySettingsDoc = {
 export type LunarProductivityJobDoc = {
   _id: ObjectId;
   userId: ObjectId;
+  profileHash?: string;
   dateKey: string;
   severity: BurnoutAlertSeverity;
   riskScore: number;
+  impactDirection?: LunarProductivityImpactDirection;
   predictedDipAt: Date | null;
   scheduledAt: Date | null;
   status: BurnoutAlertJobStatus;
   providerMessageId: string | null;
   lastError: string | null;
   sentAt: Date | null;
+  seenAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -671,6 +694,7 @@ export type MongoCollections = {
   pushNotificationTokens: Collection<PushNotificationTokenDoc>;
   burnoutAlertSettings: Collection<BurnoutAlertSettingsDoc>;
   burnoutAlertJobs: Collection<BurnoutAlertJobDoc>;
+  burnoutAlertEvents: Collection<BurnoutAlertEventDoc>;
   lunarProductivitySettings: Collection<LunarProductivitySettingsDoc>;
   lunarProductivityJobs: Collection<LunarProductivityJobDoc>;
   interviewStrategySettings: Collection<InterviewStrategySettingsDoc>;
@@ -727,6 +751,7 @@ export async function getCollections(): Promise<MongoCollections> {
     pushNotificationTokens: db.collection<PushNotificationTokenDoc>('push_notification_tokens'),
     burnoutAlertSettings: db.collection<BurnoutAlertSettingsDoc>('burnout_alert_settings'),
     burnoutAlertJobs: db.collection<BurnoutAlertJobDoc>('burnout_alert_jobs'),
+    burnoutAlertEvents: db.collection<BurnoutAlertEventDoc>('burnout_alert_events'),
     lunarProductivitySettings: db.collection<LunarProductivitySettingsDoc>('lunar_productivity_settings'),
     lunarProductivityJobs: db.collection<LunarProductivityJobDoc>('lunar_productivity_jobs'),
     interviewStrategySettings: db.collection<InterviewStrategySettingsDoc>('interview_strategy_settings'),
@@ -829,6 +854,10 @@ export async function ensureMongoIndexes() {
       await collections.burnoutAlertJobs.createIndex({ status: 1, scheduledAt: 1 });
       await collections.burnoutAlertJobs.createIndex({ userId: 1, status: 1, sentAt: -1 });
       await collections.burnoutAlertJobs.createIndex({ userId: 1, updatedAt: -1 });
+      await collections.burnoutAlertEvents.createIndex({ userId: 1, createdAt: -1 });
+      await collections.burnoutAlertEvents.createIndex({ type: 1, createdAt: -1 });
+      await collections.burnoutAlertEvents.createIndex({ dateKey: 1, type: 1, createdAt: -1 });
+      await collections.burnoutAlertEvents.createIndex({ jobId: 1, createdAt: -1 }, { sparse: true });
       await collections.lunarProductivitySettings.createIndex({ userId: 1 }, { unique: true });
       await collections.lunarProductivitySettings.createIndex({ enabled: 1, updatedAt: -1 });
       await collections.lunarProductivityJobs.createIndex({ userId: 1, dateKey: 1 }, { unique: true });

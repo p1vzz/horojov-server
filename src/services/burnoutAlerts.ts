@@ -1,11 +1,15 @@
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
+import { env } from '../config/env.js';
 import {
   getCollections,
+  type BurnoutAlertEventDoc,
+  type BurnoutAlertEventType,
   type BurnoutAlertJobDoc,
   type BurnoutAlertSettingsDoc,
   type BurnoutAlertSeverity,
   type DailyTransitDoc,
+  type MongoCollections,
   type PushNotificationTokenDoc,
   type PushTokenPlatform,
 } from '../db/mongo.js';
@@ -14,6 +18,20 @@ export const BURNOUT_RISK_ALGORITHM_VERSION = 'burnout-risk-v1';
 export const BURNOUT_TIMING_ALGORITHM_VERSION = 'burnout-timing-v1';
 
 export type BurnoutRiskSeverity = 'none' | BurnoutAlertSeverity;
+
+export type BurnoutAlertEventInput = {
+  userId: ObjectId;
+  jobId?: ObjectId | null;
+  profileHash?: string | null;
+  dateKey?: string | null;
+  type: BurnoutAlertEventType;
+  severity?: BurnoutAlertSeverity | null;
+  riskScore?: number | null;
+  reason?: string | null;
+  providerMessageId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  now?: Date;
+};
 
 export type BurnoutAlertSettingsView = {
   enabled: boolean;
@@ -72,6 +90,32 @@ function clamp(value: number, min: number, max: number) {
 
 function normalizePlanetName(value: string) {
   return value.trim().toLowerCase();
+}
+
+export function buildBurnoutAlertEventDoc(input: BurnoutAlertEventInput): BurnoutAlertEventDoc {
+  return {
+    _id: new ObjectId(),
+    userId: input.userId,
+    jobId: input.jobId ?? null,
+    profileHash: input.profileHash ?? null,
+    dateKey: input.dateKey ?? null,
+    type: input.type,
+    severity: input.severity ?? null,
+    riskScore: input.riskScore ?? null,
+    reason: input.reason ?? null,
+    providerMessageId: input.providerMessageId ?? null,
+    metadata: input.metadata ?? null,
+    createdAt: input.now ?? new Date(),
+  };
+}
+
+export async function recordBurnoutAlertEvent(
+  input: BurnoutAlertEventInput & { collections?: Pick<MongoCollections, 'burnoutAlertEvents'> }
+) {
+  const collections = input.collections ?? (await getCollections());
+  const doc = buildBurnoutAlertEventDoc(input);
+  await collections.burnoutAlertEvents.insertOne(doc);
+  return doc;
 }
 
 function parseRetro(value: string | boolean | undefined) {
@@ -188,6 +232,15 @@ export function resolveBurnoutSeverity(score: number): BurnoutRiskSeverity {
   if (score >= 70) return 'high';
   if (score >= 55) return 'warn';
   return 'none';
+}
+
+export function resolveBurnoutPushSeverity(input: {
+  riskScore: number;
+  riskSeverity: BurnoutRiskSeverity;
+}): BurnoutAlertSeverity | null {
+  if (input.riskSeverity === 'none') return null;
+  if (input.riskScore < env.BURNOUT_ALERT_MIN_SCORE) return null;
+  return input.riskSeverity;
 }
 
 export function calculateBurnoutRisk(transit: Pick<DailyTransitDoc, 'chart' | 'vibe'>) {
@@ -392,14 +445,126 @@ export async function upsertPushNotificationTokenForUser(input: {
   };
 }
 
-export async function getLatestBurnoutAlertJobForUser(userId: ObjectId): Promise<BurnoutAlertJobDoc | null> {
+export async function getLatestBurnoutAlertJobForUser(
+  userId: ObjectId,
+  dateKey?: string
+): Promise<BurnoutAlertJobDoc | null> {
   const collections = await getCollections();
   return collections.burnoutAlertJobs.findOne(
-    { userId },
+    {
+      userId,
+      ...(dateKey ? { dateKey } : {}),
+    },
     {
       sort: {
         updatedAt: -1,
       },
     }
   );
+}
+
+export function isBurnoutAlertJobCurrentForTransit(
+  job: Pick<BurnoutAlertJobDoc, 'profileHash' | 'updatedAt'> | null | undefined,
+  transit: Pick<DailyTransitDoc, 'profileHash' | 'generatedAt'>
+) {
+  if (!job) return false;
+  if (typeof job.profileHash === 'string' && job.profileHash.trim().length > 0) {
+    return job.profileHash === transit.profileHash;
+  }
+
+  // Legacy jobs did not store profileHash. They are safe only if they were
+  // written after the current profile transit was generated.
+  return job.updatedAt.getTime() >= transit.generatedAt.getTime();
+}
+
+export async function markBurnoutAlertJobSeenForUser(input: {
+  userId: ObjectId;
+  profileHash: string;
+  dateKey: string;
+  transitGeneratedAt: Date;
+  riskScore: number;
+  severity: BurnoutAlertSeverity;
+  now?: Date;
+}): Promise<{
+  status: 'cancelled' | 'already_sent';
+  job: BurnoutAlertJobDoc | null;
+}> {
+  const collections = await getCollections();
+  const now = input.now ?? new Date();
+  const existingJob = await collections.burnoutAlertJobs.findOne({
+    userId: input.userId,
+    dateKey: input.dateKey,
+  });
+  const currentExistingJob = isBurnoutAlertJobCurrentForTransit(existingJob, {
+    profileHash: input.profileHash,
+    generatedAt: input.transitGeneratedAt,
+  })
+    ? existingJob
+    : null;
+
+  if (existingJob?.status === 'sent') {
+    await recordBurnoutAlertEvent({
+      collections,
+      userId: input.userId,
+      jobId: existingJob._id,
+      profileHash: existingJob.profileHash ?? input.profileHash,
+      dateKey: input.dateKey,
+      type: 'seen',
+      severity: existingJob.severity,
+      riskScore: existingJob.riskScore,
+      reason: 'already_sent',
+      now,
+    }).catch(() => undefined);
+    return {
+      status: 'already_sent',
+      job: existingJob,
+    };
+  }
+
+  await collections.burnoutAlertJobs.updateOne(
+    { userId: input.userId, dateKey: input.dateKey },
+    {
+      $set: {
+        profileHash: input.profileHash,
+        severity: input.severity,
+        riskScore: input.riskScore,
+        predictedPeakAt: currentExistingJob?.predictedPeakAt ?? null,
+        scheduledAt: null,
+        status: 'cancelled',
+        providerMessageId: null,
+        lastError: 'viewed_in_app',
+        sentAt: currentExistingJob?.sentAt ?? null,
+        seenAt: now,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        _id: new ObjectId(),
+        createdAt: now,
+      },
+    },
+    { upsert: true }
+  );
+
+  const job = await collections.burnoutAlertJobs.findOne({
+    userId: input.userId,
+    dateKey: input.dateKey,
+  });
+
+  await recordBurnoutAlertEvent({
+    collections,
+    userId: input.userId,
+    jobId: job?._id ?? null,
+    profileHash: input.profileHash,
+    dateKey: input.dateKey,
+    type: 'seen',
+    severity: input.severity,
+    riskScore: input.riskScore,
+    reason: 'viewed_in_app',
+    now,
+  }).catch(() => undefined);
+
+  return {
+    status: 'cancelled',
+    job,
+  };
 }

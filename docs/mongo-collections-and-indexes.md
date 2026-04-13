@@ -1,6 +1,6 @@
 # Mongo Collections And Indexes
 **Status:** Active  
-**Last synced:** 2026-04-01
+**Last synced:** 2026-04-12
 
 ## Goal
 
@@ -51,6 +51,7 @@ If this document and code diverge, code is authoritative and this doc must be up
 - `push_notification_tokens`
 - `burnout_alert_settings`
 - `burnout_alert_jobs`
+- `burnout_alert_events`
 - `lunar_productivity_settings`
 - `lunar_productivity_jobs`
 - `interview_strategy_settings`
@@ -105,9 +106,13 @@ If this document and code diverge, code is authoritative and this doc must be up
 
 - `push_notification_tokens.token` unique
 - `burnout_alert_settings.userId` unique
-- `burnout_alert_jobs.userId + dateKey` unique
+- `burnout_alert_jobs.userId + dateKey` unique; each job stores the active `profileHash` so stale same-day timing can be ignored after profile edits
+- `burnout_alert_events.userId + createdAt` descending
+- `burnout_alert_events.type + createdAt` descending
+- `burnout_alert_events.dateKey + type + createdAt` descending
+- `burnout_alert_events.jobId + createdAt` sparse descending
 - `lunar_productivity_settings.userId` unique
-- `lunar_productivity_jobs.userId + dateKey` unique
+- `lunar_productivity_jobs.userId + dateKey` unique; each job stores the active `profileHash` so stale same-day timing can be ignored after profile edits
 - `interview_strategy_settings.userId` unique
 - `interview_strategy_slots.userId + slotId` unique
 

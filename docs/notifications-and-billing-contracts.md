@@ -1,6 +1,6 @@
 # Notifications And Billing Contracts
 **Status:** Active  
-**Last synced:** 2026-03-30
+**Last synced:** 2026-04-13
 
 ## Goal
 
@@ -59,6 +59,35 @@ Success payload sections:
 - `risk` (algorithm version, score, severity, components, signals)
 - `timing` (next planned time, status, scheduled date/severity)
 
+Current scheduler behavior:
+- burnout timing is triggered only when `risk.score >= BURNOUT_ALERT_MIN_SCORE` and severity is not `none`
+- `GET /burnout-plan` returns current-day timing only when alerts are enabled and the saved job matches the active birth-profile hash
+- burnout plan/seen endpoints and the burnout scheduler build the required daily transit without waiting for AI synergy generation, because burnout risk uses only the transit document
+- burnout scheduler estimates the local stress peak by scanning fixed local sample hours `[08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00]` and schedules before the highest stress window
+- burnout scheduler does not start when global Expo push access is missing, so it does not create planned jobs that cannot be dispatched
+- burnout scheduler and seen acknowledgement write durable `burnout_alert_events` records for planned/skipped/cancelled/sent/failed/seen outcomes to support QA and release debugging without changing the mobile API contract
+- stale same-day burnout jobs from an earlier onboarding/profile edit are ignored for current plan status and cancelled before dispatch
+- future birth-profile edit flows must write through `PUT /api/astrology/birth-profile` and then refresh dependent backend-derived outputs from the new `profileHash`; do not reuse client-local profile caches for burnout plan/push timing decisions
+- opening the dashboard with an in-threshold burnout card calls `POST /burnout-seen` so a pending same-day push is cancelled once the guidance was already shown in-app
+- shipped burnout pushes use action-oriented guidance copy rather than raw model diagnostics
+
+### `POST /burnout-seen`
+
+Purpose:
+- acknowledge that the current in-threshold burnout insight was already surfaced in-app and suppress any same-day unsent burnout push.
+
+Auth:
+- required (`401`)
+- premium required (`403`, `{ code: "premium_required" }`)
+
+Validation:
+- body requires current-day `dateKey` in `YYYY-MM-DD`
+
+Success:
+- returns acknowledgement result with `acknowledged`, `reason`, `dateKey`, and resulting `timingStatus`
+- if the matching push was still pending, current-day burnout job is marked cancelled and planner skips re-planning for that same `dateKey`
+- acknowledgement writes the active birth-profile hash so scheduler suppression follows the data version the user actually saw
+
 ### `PUT /lunar-productivity-settings`
 
 Purpose:
@@ -88,8 +117,34 @@ Error behavior:
 - `502` for upstream/transit build failures
 
 Success payload sections:
-- `risk` (algorithm version, score, severity, lunar components/signals)
+- `risk` (algorithm version, score, severity, `impactDirection`, lunar components/signals)
 - `timing` (next planned time, status, scheduled date/severity)
+
+Current scheduler behavior:
+- lunar timing is triggered only on extreme score bands: `<= 25` (`supportive`) and `>= 80` (`disruptive`)
+- `risk.severity` remains risk-oriented, so strongly supportive low-score days can still return `timing.status = planned` while `risk.severity = none`
+- lunar plan/seen endpoints and the lunar scheduler build the required daily transit without waiting for AI synergy generation, because lunar productivity risk uses only the transit document
+- lunar scheduler does not start when global Expo push access is missing, so it does not create planned jobs that cannot be dispatched
+- shipped lunar pushes use direction-aware, action-oriented copy rather than raw risk diagnostics
+- lunar timing state is scoped to the active birth-profile hash; stale same-day jobs from an earlier onboarding/profile edit are ignored for current plan status
+- future birth-profile edit flows must write through `PUT /api/astrology/birth-profile` and then refresh dependent backend-derived outputs from the new `profileHash`; do not reuse client-local profile caches for lunar plan/push timing decisions
+
+### `POST /lunar-productivity-seen`
+
+Purpose:
+- acknowledge that the current in-range lunar insight was already surfaced in-app and suppress any same-day unsent lunar push.
+
+Auth:
+- required (`401`)
+- premium required (`403`, `{ code: "premium_required" }`)
+
+Validation:
+- body requires current-day `dateKey` in `YYYY-MM-DD`
+
+Success:
+- returns acknowledgement result with `acknowledged`, `reason`, `dateKey`, `impactDirection`, and resulting `timingStatus`
+- if the matching push was still pending, current-day lunar job is marked cancelled and planner skips re-planning for that same `dateKey`
+- acknowledgement writes the active birth-profile hash so scheduler suppression follows the data version the user actually saw
 
 ### `PUT /interview-strategy-settings`
 
@@ -163,10 +218,15 @@ Error behavior:
 Idempotency:
 - `eventId` is persisted in `revenue_cat_events` and duplicates are treated as non-fatal.
 
-## Known Gap (Current)
+## Current Burnout Delivery Status
 
-- Lunar productivity scheduler push-dispatch pipeline is not yet enabled.
-- Current lunar API returns deterministic risk/timing contract using latest persisted lunar job (or `not_scheduled` when absent).
+- Burnout settings, current-day plan lookup, planner, push dispatch, and in-app seen acknowledgement are enabled.
+- `GET /burnout-plan` returns timing from the current local `dateKey` only when alerts are enabled and timing belongs to the active `profileHash`; otherwise timing falls back to `not_scheduled`.
+
+## Current Lunar Delivery Status
+
+- Lunar productivity settings, current-day plan lookup, planner, and push dispatch are enabled.
+- `GET /lunar-productivity-plan` returns timing from the current local `dateKey` only when alerts are enabled; otherwise timing falls back to `not_scheduled`.
 
 ## Source Files
 

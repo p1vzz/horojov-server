@@ -694,6 +694,10 @@ type EnsureTransitResult = {
   aiSynergy: AiSynergyView | null;
 };
 
+type EnsureTransitOptions = {
+  includeAiSynergy?: boolean;
+};
+
 async function ensureAiSynergyForTransit(
   profile: BirthProfileDoc,
   dateKey: string,
@@ -728,8 +732,10 @@ async function ensureDailyTransitForProfile(
   profile: BirthProfileDoc,
   date: Date,
   logger: FastifyBaseLogger,
-  collections: MongoCollections
+  collections: MongoCollections,
+  options: EnsureTransitOptions = {}
 ): Promise<EnsureTransitResult> {
+  const includeAiSynergy = options.includeAiSynergy ?? true;
   const dateKey = toDateKey(date);
   const existing = await collections.dailyTransits.findOne({
     userId: profile.userId,
@@ -738,7 +744,9 @@ async function ensureDailyTransitForProfile(
   });
 
   if (existing?.vibe?.algorithmVersion === DAILY_VIBE_ALGORITHM_VERSION) {
-    const aiSynergy = await ensureAiSynergyForTransit(profile, dateKey, existing, collections, logger);
+    const aiSynergy = includeAiSynergy
+      ? await ensureAiSynergyForTransit(profile, dateKey, existing, collections, logger)
+      : null;
     return { doc: existing, cached: true, aiSynergy };
   }
 
@@ -802,11 +810,18 @@ async function ensureDailyTransitForProfile(
     { upsert: true }
   );
 
-  const aiSynergy = await ensureAiSynergyForTransit(profile, dateKey, doc, collections, logger);
+  const aiSynergy = includeAiSynergy
+    ? await ensureAiSynergyForTransit(profile, dateKey, doc, collections, logger)
+    : null;
   return { doc, cached: false, aiSynergy };
 }
 
-export async function getOrCreateDailyTransitForUser(userId: ObjectId, date: Date, logger: FastifyBaseLogger): Promise<EnsureTransitResult> {
+export async function getOrCreateDailyTransitForUser(
+  userId: ObjectId,
+  date: Date,
+  logger: FastifyBaseLogger,
+  options: EnsureTransitOptions = {}
+): Promise<EnsureTransitResult> {
   const collections = await getCollections();
   const profile = await collections.birthProfiles.findOne(
     { userId },
@@ -825,7 +840,7 @@ export async function getOrCreateDailyTransitForUser(userId: ObjectId, date: Dat
     throw new Error('Birth profile not found');
   }
 
-  return ensureDailyTransitForProfile(profile, date, logger, collections);
+  return ensureDailyTransitForProfile(profile, date, logger, collections, options);
 }
 
 export async function generateDailyTransitsForAllUsers(date: Date, logger: FastifyBaseLogger) {

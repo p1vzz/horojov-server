@@ -1,6 +1,6 @@
 # Redis Cache And Locks - Current State
 **Status:** Active  
-**Last synced:** 2026-03-30
+**Last synced:** 2026-04-10
 
 ## Goal
 
@@ -71,6 +71,7 @@ Keys by scheduler:
 - `lock:daily-transit:<dateKey>`
 - `lock:job-metrics:<windowHours>:<bucket>`
 - `lock:burnout-alerts:<bucket>`
+- `lock:lunar-productivity:<bucket>`
 - `lock:interview-strategy:<bucket>`
 
 TTL controls:
@@ -78,6 +79,7 @@ TTL controls:
 - `SCHEDULER_LOCK_DAILY_TRANSIT_TTL_SECONDS`
 - `SCHEDULER_LOCK_JOB_METRICS_TTL_SECONDS`
 - `SCHEDULER_LOCK_BURNOUT_ALERTS_TTL_SECONDS`
+- `SCHEDULER_LOCK_LUNAR_PRODUCTIVITY_TTL_SECONDS`
 - `SCHEDULER_LOCK_INTERVIEW_STRATEGY_TTL_SECONDS`
 
 Schedulers using lock wrapper:
@@ -85,6 +87,7 @@ Schedulers using lock wrapper:
 - `startDailyTransitScheduler`
 - `startJobMetricsAlertScheduler`
 - `startBurnoutAlertScheduler`
+- `startLunarProductivityScheduler`
 - `startInterviewStrategyScheduler`
 
 ## Worker Runtime Safety
@@ -114,6 +117,7 @@ Those items remain in planning doc: `docs/redis-cache-plan.md`.
 - `SCHEDULER_LOCK_DAILY_TRANSIT_TTL_SECONDS`
 - `SCHEDULER_LOCK_JOB_METRICS_TTL_SECONDS`
 - `SCHEDULER_LOCK_BURNOUT_ALERTS_TTL_SECONDS`
+- `SCHEDULER_LOCK_LUNAR_PRODUCTIVITY_TTL_SECONDS`
 - `SCHEDULER_LOCK_INTERVIEW_STRATEGY_TTL_SECONDS`
 
 ## Source Files
@@ -126,4 +130,5 @@ Those items remain in planning doc: `docs/redis-cache-plan.md`.
 - `src/services/dailyTransitScheduler.ts`
 - `src/services/jobMetricsAlertScheduler.ts`
 - `src/services/burnoutAlertScheduler.ts`
+- `src/services/lunarProductivityScheduler.ts`
 - `src/services/interviewStrategyScheduler.ts`

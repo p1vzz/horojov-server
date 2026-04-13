@@ -1,8 +1,11 @@
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
+import { env } from '../config/env.js';
 import {
   getCollections,
+  type BurnoutAlertSeverity,
   type DailyTransitDoc,
+  type LunarProductivityImpactDirection,
   type LunarProductivityJobDoc,
   type LunarProductivityRiskSeverity,
   type LunarProductivitySettingsDoc,
@@ -30,6 +33,20 @@ export type LunarProductivitySettingsView = {
   quietHoursEndMinute: number;
   updatedAt: string | null;
   source: 'default' | 'saved';
+};
+
+export type LunarProductivityTimingSignals = {
+  moonPhase: LunarPhase;
+  illuminationPercent: number;
+  moonHouse: number | null;
+  moonHardCount: number;
+  moonSaturnHard: number;
+  moonMercuryHard: number;
+  supportiveAspectStrength: number;
+  momentum: {
+    energy: number;
+    focus: number;
+  };
 };
 
 const chartSnapshotSchema = z
@@ -233,17 +250,54 @@ export function resolveLunarProductivitySeverity(score: number): LunarProductivi
   return 'none';
 }
 
-export function calculateLunarProductivityRisk(transit: Pick<DailyTransitDoc, 'dateKey' | 'chart' | 'vibe'>) {
+export function resolveLunarProductivityImpactDirection(score: number): LunarProductivityImpactDirection | null {
+  if (score <= env.LUNAR_PRODUCTIVITY_LOW_IMPACT_THRESHOLD) {
+    return 'supportive';
+  }
+  if (score >= env.LUNAR_PRODUCTIVITY_HIGH_IMPACT_THRESHOLD) {
+    return 'disruptive';
+  }
+  return null;
+}
+
+export function resolveLunarProductivityPushSeverity(input: {
+  riskScore: number;
+  riskSeverity: LunarProductivityRiskSeverity;
+}): BurnoutAlertSeverity | null {
+  const impactDirection = resolveLunarProductivityImpactDirection(input.riskScore);
+  if (!impactDirection) return null;
+  if (impactDirection === 'supportive') return 'warn';
+  return input.riskSeverity === 'none' ? 'warn' : input.riskSeverity;
+}
+
+export function resolveLunarProductivityTimingSignals(transit: Pick<DailyTransitDoc, 'dateKey' | 'chart' | 'vibe'>) {
   const chart = parseChartSnapshot(transit.chart);
   const moonSignals = resolveMoonHardSignals(chart);
   const moonHouse = resolveMoonHouse(chart, transit);
-
   const { phase, illuminationPercent } = resolveMoonPhaseAndIllumination(transit.dateKey);
-  const phaseLoad = PHASE_LOAD_BASE[phase] + 0.18 * Math.abs(illuminationPercent - 50);
-
   const momentumEnergy = transit.vibe.signals?.momentum.energy ?? 0;
   const momentumFocus = transit.vibe.signals?.momentum.focus ?? 0;
   const supportiveAspectStrength = transit.vibe.signals?.positiveAspectStrength ?? 0;
+
+  return {
+    moonPhase: phase,
+    illuminationPercent,
+    moonHouse,
+    moonHardCount: moonSignals.moonHardCount,
+    moonSaturnHard: moonSignals.moonSaturnHard,
+    moonMercuryHard: moonSignals.moonMercuryHard,
+    supportiveAspectStrength: Number(supportiveAspectStrength.toFixed(2)),
+    momentum: {
+      energy: Number(momentumEnergy.toFixed(2)),
+      focus: Number(momentumFocus.toFixed(2)),
+    },
+  } satisfies LunarProductivityTimingSignals;
+}
+
+export function calculateLunarProductivityRisk(transit: Pick<DailyTransitDoc, 'dateKey' | 'chart' | 'vibe'>) {
+  const timingSignals = resolveLunarProductivityTimingSignals(transit);
+  const phaseLoad =
+    PHASE_LOAD_BASE[timingSignals.moonPhase] + 0.18 * Math.abs(timingSignals.illuminationPercent - 50);
 
   const energy = clamp(transit.vibe.metrics.energy, 0, 100);
   const focus = clamp(transit.vibe.metrics.focus, 0, 100);
@@ -253,19 +307,19 @@ export function calculateLunarProductivityRisk(transit: Pick<DailyTransitDoc, 'd
   const riskTagRushBias = scoreForTag(transit.vibe.tags, 'rush_bias');
 
   const emotionalTide =
-    4.8 * moonSignals.moonHardCount +
-    8 * moonSignals.moonSaturnHard +
-    5.5 * moonSignals.moonMercuryHard +
-    0.75 * Math.abs(momentumEnergy - momentumFocus);
+    4.8 * timingSignals.moonHardCount +
+    8 * timingSignals.moonSaturnHard +
+    5.5 * timingSignals.moonMercuryHard +
+    0.75 * Math.abs(timingSignals.momentum.energy - timingSignals.momentum.focus);
 
   const focusResonance =
     0.62 * Math.max(0, energy - focus) +
     0.36 * Math.max(0, 60 - luck) +
-    0.9 * Math.max(0, -momentumFocus);
+    0.9 * Math.max(0, -timingSignals.momentum.focus);
 
   const circadianAlignment = 0.19 * riskTagContextSwitch + 0.17 * riskTagRushBias;
 
-  const recoveryBuffer = 0.33 * supportiveAspectStrength + 0.24 * focus + 0.17 * luck;
+  const recoveryBuffer = 0.33 * timingSignals.supportiveAspectStrength + 0.24 * focus + 0.17 * luck;
 
   const rawRisk = 11 + phaseLoad + emotionalTide + focusResonance + circadianAlignment - recoveryBuffer;
   const riskScore = clamp(Math.round(rawRisk), 0, 100);
@@ -283,14 +337,14 @@ export function calculateLunarProductivityRisk(transit: Pick<DailyTransitDoc, 'd
       recoveryBuffer: Number(recoveryBuffer.toFixed(2)),
     },
     signals: {
-      moonPhase: phase,
-      illuminationPercent,
-      moonHouse,
-      hardAspectCount: moonSignals.moonHardCount,
-      supportiveAspectStrength: Number(supportiveAspectStrength.toFixed(2)),
+      moonPhase: timingSignals.moonPhase,
+      illuminationPercent: timingSignals.illuminationPercent,
+      moonHouse: timingSignals.moonHouse,
+      hardAspectCount: timingSignals.moonHardCount,
+      supportiveAspectStrength: timingSignals.supportiveAspectStrength,
       momentum: {
-        energy: Number(momentumEnergy.toFixed(2)),
-        focus: Number(momentumFocus.toFixed(2)),
+        energy: timingSignals.momentum.energy,
+        focus: timingSignals.momentum.focus,
       },
     },
   };
@@ -360,14 +414,101 @@ export async function upsertLunarProductivitySettingsForUser(input: {
   return toSettingsView(saved);
 }
 
-export async function getLatestLunarProductivityJobForUser(userId: ObjectId): Promise<LunarProductivityJobDoc | null> {
+export async function getLatestLunarProductivityJobForUser(
+  userId: ObjectId,
+  dateKey?: string,
+): Promise<LunarProductivityJobDoc | null> {
   const collections = await getCollections();
   return collections.lunarProductivityJobs.findOne(
-    { userId },
+    {
+      userId,
+      ...(dateKey ? { dateKey } : {}),
+    },
     {
       sort: {
         updatedAt: -1,
       },
     },
   );
+}
+
+export function isLunarProductivityJobCurrentForTransit(
+  job: Pick<LunarProductivityJobDoc, 'profileHash' | 'updatedAt'> | null | undefined,
+  transit: Pick<DailyTransitDoc, 'profileHash' | 'generatedAt'>,
+) {
+  if (!job) return false;
+  if (typeof job.profileHash === 'string' && job.profileHash.trim().length > 0) {
+    return job.profileHash === transit.profileHash;
+  }
+
+  // Legacy jobs did not store profileHash. They are safe only if they were
+  // written after the current profile transit was generated.
+  return job.updatedAt.getTime() >= transit.generatedAt.getTime();
+}
+
+export async function markLunarProductivityJobSeenForUser(input: {
+  userId: ObjectId;
+  profileHash: string;
+  dateKey: string;
+  transitGeneratedAt: Date;
+  riskScore: number;
+  severity: BurnoutAlertSeverity;
+  impactDirection: LunarProductivityImpactDirection;
+  now?: Date;
+}): Promise<{
+  status: 'cancelled' | 'already_sent';
+  job: LunarProductivityJobDoc | null;
+}> {
+  const collections = await getCollections();
+  const now = input.now ?? new Date();
+  const existingJob = await collections.lunarProductivityJobs.findOne({
+    userId: input.userId,
+    dateKey: input.dateKey,
+  });
+  const currentExistingJob = isLunarProductivityJobCurrentForTransit(existingJob, {
+    profileHash: input.profileHash,
+    generatedAt: input.transitGeneratedAt,
+  })
+    ? existingJob
+    : null;
+
+  if (existingJob?.status === 'sent') {
+    return {
+      status: 'already_sent',
+      job: existingJob,
+    };
+  }
+
+  await collections.lunarProductivityJobs.updateOne(
+    { userId: input.userId, dateKey: input.dateKey },
+    {
+      $set: {
+        profileHash: input.profileHash,
+        severity: input.severity,
+        riskScore: input.riskScore,
+        impactDirection: input.impactDirection,
+        predictedDipAt: currentExistingJob?.predictedDipAt ?? null,
+        scheduledAt: null,
+        status: 'cancelled',
+        providerMessageId: null,
+        lastError: 'viewed_in_app',
+        sentAt: currentExistingJob?.sentAt ?? null,
+        seenAt: now,
+        updatedAt: now,
+      },
+      $setOnInsert: {
+        _id: new ObjectId(),
+        createdAt: now,
+      },
+    },
+    { upsert: true },
+  );
+
+  return {
+    status: 'cancelled',
+    job: await collections.lunarProductivityJobs.findOne({
+      userId: input.userId,
+      dateKey: input.dateKey,
+    }),
+  };
 }

@@ -7,7 +7,10 @@ import {
   calculateBurnoutRisk,
   getBurnoutAlertSettingsForUser,
   getLatestBurnoutAlertJobForUser,
+  isBurnoutAlertJobCurrentForTransit,
   isValidIanaTimezone,
+  markBurnoutAlertJobSeenForUser,
+  resolveBurnoutPushSeverity,
   upsertBurnoutAlertSettingsForUser,
   upsertPushNotificationTokenForUser,
 } from '../services/burnoutAlerts.js';
@@ -15,7 +18,11 @@ import {
   calculateLunarProductivityRisk,
   getLatestLunarProductivityJobForUser,
   getLunarProductivitySettingsForUser,
+  isLunarProductivityJobCurrentForTransit,
   LUNAR_PRODUCTIVITY_TIMING_ALGORITHM_VERSION,
+  markLunarProductivityJobSeenForUser,
+  resolveLunarProductivityImpactDirection,
+  resolveLunarProductivityPushSeverity,
   upsertLunarProductivitySettingsForUser,
 } from '../services/lunarProductivity.js';
 import {
@@ -33,11 +40,16 @@ export type NotificationRouteDependencies = {
   getBurnoutAlertSettingsForUser: typeof getBurnoutAlertSettingsForUser;
   getLatestBurnoutAlertJobForUser: typeof getLatestBurnoutAlertJobForUser;
   isValidIanaTimezone: typeof isValidIanaTimezone;
+  markBurnoutAlertJobSeenForUser: typeof markBurnoutAlertJobSeenForUser;
+  resolveBurnoutPushSeverity: typeof resolveBurnoutPushSeverity;
   upsertBurnoutAlertSettingsForUser: typeof upsertBurnoutAlertSettingsForUser;
   upsertPushNotificationTokenForUser: typeof upsertPushNotificationTokenForUser;
   calculateLunarProductivityRisk: typeof calculateLunarProductivityRisk;
   getLatestLunarProductivityJobForUser: typeof getLatestLunarProductivityJobForUser;
   getLunarProductivitySettingsForUser: typeof getLunarProductivitySettingsForUser;
+  markLunarProductivityJobSeenForUser: typeof markLunarProductivityJobSeenForUser;
+  resolveLunarProductivityImpactDirection: typeof resolveLunarProductivityImpactDirection;
+  resolveLunarProductivityPushSeverity: typeof resolveLunarProductivityPushSeverity;
   upsertLunarProductivitySettingsForUser: typeof upsertLunarProductivitySettingsForUser;
   fetchInterviewStrategyPlanForUser: typeof fetchInterviewStrategyPlanForUser;
   maybeRefillInterviewStrategyWindowForUser: typeof maybeRefillInterviewStrategyWindowForUser;
@@ -62,6 +74,10 @@ const burnoutSettingsSchema = z.object({
   workdayEndMinute: z.coerce.number().int().min(0).max(1439),
   quietHoursStartMinute: z.coerce.number().int().min(0).max(1439),
   quietHoursEndMinute: z.coerce.number().int().min(0).max(1439),
+});
+
+const burnoutSeenSchema = z.object({
+  dateKey: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
 const lunarProductivitySettingsSchema = z.object({
@@ -91,6 +107,10 @@ const interviewStrategyPlanQuerySchema = z.object({
   refresh: z.enum(['true', 'false']).optional(),
 });
 
+const lunarProductivitySeenSchema = z.object({
+  dateKey: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
 const defaultDeps: NotificationRouteDependencies = {
   authenticateByAuthorizationHeader,
   buildTodayDate,
@@ -99,11 +119,16 @@ const defaultDeps: NotificationRouteDependencies = {
   getBurnoutAlertSettingsForUser,
   getLatestBurnoutAlertJobForUser,
   isValidIanaTimezone,
+  markBurnoutAlertJobSeenForUser,
+  resolveBurnoutPushSeverity,
   upsertBurnoutAlertSettingsForUser,
   upsertPushNotificationTokenForUser,
   calculateLunarProductivityRisk,
   getLatestLunarProductivityJobForUser,
   getLunarProductivitySettingsForUser,
+  markLunarProductivityJobSeenForUser,
+  resolveLunarProductivityImpactDirection,
+  resolveLunarProductivityPushSeverity,
   upsertLunarProductivitySettingsForUser,
   fetchInterviewStrategyPlanForUser,
   maybeRefillInterviewStrategyWindowForUser,
@@ -220,13 +245,23 @@ export async function registerNotificationRoutes(
     }
 
     const settings = await deps.getBurnoutAlertSettingsForUser(auth.user._id);
-    const latestJob = await deps.getLatestBurnoutAlertJobForUser(auth.user._id);
 
     try {
-      const transit = await deps.getOrCreateDailyTransitForUser(auth.user._id, deps.buildTodayDate(), request.log);
+      const transit = await deps.getOrCreateDailyTransitForUser(
+        auth.user._id,
+        deps.buildTodayDate(),
+        request.log,
+        { includeAiSynergy: false }
+      );
       const risk = deps.calculateBurnoutRisk(transit.doc);
+      const latestJob = settings.enabled
+        ? await deps.getLatestBurnoutAlertJobForUser(auth.user._id, transit.doc.dateKey)
+        : null;
+      const currentJob = isBurnoutAlertJobCurrentForTransit(latestJob, transit.doc) ? latestJob : null;
       const nextPlannedAt =
-        latestJob?.status === 'planned' && latestJob.scheduledAt ? latestJob.scheduledAt.toISOString() : null;
+        settings.enabled && currentJob?.status === 'planned' && currentJob.scheduledAt
+          ? currentJob.scheduledAt.toISOString()
+          : null;
 
       return {
         dateKey: transit.doc.dateKey,
@@ -242,9 +277,9 @@ export async function registerNotificationRoutes(
         timing: {
           algorithmVersion: BURNOUT_TIMING_ALGORITHM_VERSION,
           nextPlannedAt,
-          status: latestJob?.status ?? 'not_scheduled',
-          scheduledDateKey: latestJob?.dateKey ?? null,
-          scheduledSeverity: latestJob?.severity ?? null,
+          status: settings.enabled ? currentJob?.status ?? 'not_scheduled' : 'not_scheduled',
+          scheduledDateKey: settings.enabled ? currentJob?.dateKey ?? null : null,
+          scheduledSeverity: settings.enabled ? currentJob?.severity ?? null : null,
         },
       };
     } catch (error) {
@@ -254,6 +289,80 @@ export async function registerNotificationRoutes(
       }
       request.log.error({ error }, 'burnout plan request failed');
       return reply.code(502).send({ error: 'Unable to build burnout plan' });
+    }
+  });
+
+  app.post('/burnout-seen', async (request, reply) => {
+    const auth = await deps.authenticateByAuthorizationHeader(request.headers.authorization);
+    if (!auth) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    if (auth.user.subscriptionTier !== 'premium') {
+      return reply.code(403).send({ error: 'Premium required', code: 'premium_required' });
+    }
+
+    const parsed = burnoutSeenSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Invalid burnout seen payload',
+        details: parsed.error.flatten().fieldErrors,
+      });
+    }
+
+    try {
+      const transit = await deps.getOrCreateDailyTransitForUser(
+        auth.user._id,
+        deps.buildTodayDate(),
+        request.log,
+        { includeAiSynergy: false }
+      );
+      const risk = deps.calculateBurnoutRisk(transit.doc);
+      const pushSeverity = deps.resolveBurnoutPushSeverity({
+        riskScore: risk.riskScore,
+        riskSeverity: risk.severity,
+      });
+
+      if (parsed.data.dateKey !== transit.doc.dateKey) {
+        return {
+          acknowledged: false,
+          reason: 'date_mismatch',
+          dateKey: transit.doc.dateKey,
+          timingStatus: 'not_scheduled',
+        };
+      }
+
+      if (!pushSeverity) {
+        return {
+          acknowledged: false,
+          reason: 'below_threshold',
+          dateKey: transit.doc.dateKey,
+          timingStatus: 'not_scheduled',
+        };
+      }
+
+      const result = await deps.markBurnoutAlertJobSeenForUser({
+        userId: auth.user._id,
+        profileHash: transit.doc.profileHash,
+        dateKey: transit.doc.dateKey,
+        transitGeneratedAt: transit.doc.generatedAt,
+        riskScore: risk.riskScore,
+        severity: pushSeverity,
+      });
+
+      return {
+        acknowledged: result.status !== 'already_sent',
+        reason: result.status === 'already_sent' ? 'already_sent' : null,
+        dateKey: transit.doc.dateKey,
+        timingStatus: result.status === 'already_sent' ? 'sent' : 'cancelled',
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message.includes('Birth profile not found')) {
+        return reply.code(404).send({ error: 'Birth profile not found. Complete onboarding first.' });
+      }
+      request.log.error({ error }, 'burnout seen acknowledgement failed');
+      return reply.code(502).send({ error: 'Unable to acknowledge burnout insight' });
     }
   });
 
@@ -326,13 +435,23 @@ export async function registerNotificationRoutes(
     }
 
     const settings = await deps.getLunarProductivitySettingsForUser(auth.user._id);
-    const latestJob = await deps.getLatestLunarProductivityJobForUser(auth.user._id);
 
     try {
-      const transit = await deps.getOrCreateDailyTransitForUser(auth.user._id, deps.buildTodayDate(), request.log);
+      const transit = await deps.getOrCreateDailyTransitForUser(
+        auth.user._id,
+        deps.buildTodayDate(),
+        request.log,
+        { includeAiSynergy: false }
+      );
       const risk = deps.calculateLunarProductivityRisk(transit.doc);
+      const latestJob = settings.enabled
+        ? await deps.getLatestLunarProductivityJobForUser(auth.user._id, transit.doc.dateKey)
+        : null;
+      const currentJob = isLunarProductivityJobCurrentForTransit(latestJob, transit.doc) ? latestJob : null;
       const nextPlannedAt =
-        latestJob?.status === 'planned' && latestJob.scheduledAt ? latestJob.scheduledAt.toISOString() : null;
+        settings.enabled && currentJob?.status === 'planned' && currentJob.scheduledAt
+          ? currentJob.scheduledAt.toISOString()
+          : null;
 
       return {
         dateKey: transit.doc.dateKey,
@@ -342,15 +461,16 @@ export async function registerNotificationRoutes(
           algorithmVersion: risk.algorithmVersion,
           score: risk.riskScore,
           severity: risk.severity,
+          impactDirection: deps.resolveLunarProductivityImpactDirection(risk.riskScore) ?? null,
           components: risk.components,
           signals: risk.signals,
         },
         timing: {
           algorithmVersion: LUNAR_PRODUCTIVITY_TIMING_ALGORITHM_VERSION,
           nextPlannedAt,
-          status: latestJob?.status ?? 'not_scheduled',
-          scheduledDateKey: latestJob?.dateKey ?? null,
-          scheduledSeverity: latestJob?.severity ?? null,
+          status: settings.enabled ? currentJob?.status ?? 'not_scheduled' : 'not_scheduled',
+          scheduledDateKey: settings.enabled ? currentJob?.dateKey ?? null : null,
+          scheduledSeverity: settings.enabled ? currentJob?.severity ?? null : null,
         },
       };
     } catch (error) {
@@ -360,6 +480,85 @@ export async function registerNotificationRoutes(
       }
       request.log.error({ error }, 'lunar productivity plan request failed');
       return reply.code(502).send({ error: 'Unable to build lunar productivity plan' });
+    }
+  });
+
+  app.post('/lunar-productivity-seen', async (request, reply) => {
+    const auth = await deps.authenticateByAuthorizationHeader(request.headers.authorization);
+    if (!auth) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    if (auth.user.subscriptionTier !== 'premium') {
+      return reply.code(403).send({ error: 'Premium required', code: 'premium_required' });
+    }
+
+    const parsed = lunarProductivitySeenSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        error: 'Invalid lunar productivity seen payload',
+        details: parsed.error.flatten().fieldErrors,
+      });
+    }
+
+    try {
+      const transit = await deps.getOrCreateDailyTransitForUser(
+        auth.user._id,
+        deps.buildTodayDate(),
+        request.log,
+        { includeAiSynergy: false }
+      );
+      const risk = deps.calculateLunarProductivityRisk(transit.doc);
+      const impactDirection = deps.resolveLunarProductivityImpactDirection(risk.riskScore);
+      const pushSeverity = deps.resolveLunarProductivityPushSeverity({
+        riskScore: risk.riskScore,
+        riskSeverity: risk.severity,
+      });
+
+      if (parsed.data.dateKey !== transit.doc.dateKey) {
+        return {
+          acknowledged: false,
+          reason: 'date_mismatch',
+          dateKey: transit.doc.dateKey,
+          impactDirection,
+          timingStatus: 'not_scheduled',
+        };
+      }
+
+      if (!impactDirection || !pushSeverity) {
+        return {
+          acknowledged: false,
+          reason: 'outside_display_range',
+          dateKey: transit.doc.dateKey,
+          impactDirection: null,
+          timingStatus: 'not_scheduled',
+        };
+      }
+
+      const result = await deps.markLunarProductivityJobSeenForUser({
+        userId: auth.user._id,
+        profileHash: transit.doc.profileHash,
+        dateKey: transit.doc.dateKey,
+        transitGeneratedAt: transit.doc.generatedAt,
+        riskScore: risk.riskScore,
+        severity: pushSeverity,
+        impactDirection,
+      });
+
+      return {
+        acknowledged: result.status !== 'already_sent',
+        reason: result.status === 'already_sent' ? 'already_sent' : null,
+        dateKey: transit.doc.dateKey,
+        impactDirection,
+        timingStatus: result.status === 'already_sent' ? 'sent' : 'cancelled',
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message.includes('Birth profile not found')) {
+        return reply.code(404).send({ error: 'Birth profile not found. Complete onboarding first.' });
+      }
+      request.log.error({ error }, 'lunar productivity seen acknowledgement failed');
+      return reply.code(502).send({ error: 'Unable to acknowledge lunar productivity insight' });
     }
   });
 

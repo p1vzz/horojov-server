@@ -7,6 +7,7 @@ import { startBurnoutAlertScheduler } from '../services/burnoutAlertScheduler.js
 import { startDailyTransitScheduler } from '../services/dailyTransitScheduler.js';
 import { startInterviewStrategyScheduler } from '../services/interviewStrategyScheduler.js';
 import { startJobMetricsAlertScheduler } from '../services/jobMetricsAlertScheduler.js';
+import { startLunarProductivityScheduler } from '../services/lunarProductivityScheduler.js';
 import { getWorkerSchedulerRuntimeIssues } from './runtimeProcessCore.js';
 
 type StopFn = () => void;
@@ -33,6 +34,7 @@ export function startAllSchedulers(app: FastifyInstance) {
     startDailyTransitScheduler(app.log),
     startJobMetricsAlertScheduler(app.log),
     startBurnoutAlertScheduler(app.log),
+    startLunarProductivityScheduler(app.log),
     startInterviewStrategyScheduler(app.log),
   ];
 

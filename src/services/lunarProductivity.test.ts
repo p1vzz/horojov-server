@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { calculateLunarProductivityRisk, resolveLunarProductivitySeverity } from './lunarProductivity.js';
+import {
+  calculateLunarProductivityRisk,
+  isLunarProductivityJobCurrentForTransit,
+  resolveLunarProductivitySeverity,
+  resolveLunarProductivityTimingSignals,
+} from './lunarProductivity.js';
 
 test('resolveLunarProductivitySeverity keeps expected thresholds', () => {
   assert.equal(resolveLunarProductivitySeverity(0), 'none');
@@ -12,8 +17,62 @@ test('resolveLunarProductivitySeverity keeps expected thresholds', () => {
   assert.equal(resolveLunarProductivitySeverity(85), 'critical');
 });
 
+test('isLunarProductivityJobCurrentForTransit matches explicit profile hashes', () => {
+  const transit = {
+    profileHash: 'profile-new',
+    generatedAt: new Date('2026-04-11T10:00:00.000Z'),
+  };
+
+  assert.equal(
+    isLunarProductivityJobCurrentForTransit(
+      {
+        profileHash: 'profile-new',
+        updatedAt: new Date('2026-04-11T09:00:00.000Z'),
+      },
+      transit,
+    ),
+    true,
+  );
+  assert.equal(
+    isLunarProductivityJobCurrentForTransit(
+      {
+        profileHash: 'profile-old',
+        updatedAt: new Date('2026-04-11T11:00:00.000Z'),
+      },
+      transit,
+    ),
+    false,
+  );
+});
+
+test('isLunarProductivityJobCurrentForTransit handles legacy jobs by write time', () => {
+  const transit = {
+    profileHash: 'profile-new',
+    generatedAt: new Date('2026-04-11T10:00:00.000Z'),
+  };
+
+  assert.equal(
+    isLunarProductivityJobCurrentForTransit(
+      {
+        updatedAt: new Date('2026-04-11T10:01:00.000Z'),
+      },
+      transit,
+    ),
+    true,
+  );
+  assert.equal(
+    isLunarProductivityJobCurrentForTransit(
+      {
+        updatedAt: new Date('2026-04-11T09:59:00.000Z'),
+      },
+      transit,
+    ),
+    false,
+  );
+});
+
 test('calculateLunarProductivityRisk returns contract-safe payload fields', () => {
-  const risk = calculateLunarProductivityRisk({
+  const transit = {
     dateKey: '2026-03-30',
     chart: {
       houses: [
@@ -83,7 +142,9 @@ test('calculateLunarProductivityRisk returns contract-safe payload fields', () =
       modeLabel: 'volatile',
       summary: 'test',
     },
-  });
+  };
+  const timingSignals = resolveLunarProductivityTimingSignals(transit);
+  const risk = calculateLunarProductivityRisk(transit);
 
   assert.equal(risk.algorithmVersion, 'lunar-productivity-risk-v1');
   assert.ok(risk.riskScore >= 0 && risk.riskScore <= 100);
@@ -109,4 +170,10 @@ test('calculateLunarProductivityRisk returns contract-safe payload fields', () =
   assert.ok(typeof risk.signals.moonHouse === 'number' || risk.signals.moonHouse === null);
   assert.ok(risk.signals.hardAspectCount >= 0);
   assert.ok(risk.signals.supportiveAspectStrength >= 0);
+  assert.equal(timingSignals.moonHardCount, risk.signals.hardAspectCount);
+  assert.equal(timingSignals.moonPhase, risk.signals.moonPhase);
+  assert.equal(timingSignals.illuminationPercent, risk.signals.illuminationPercent);
+  assert.equal(timingSignals.moonHouse, risk.signals.moonHouse);
+  assert.ok(timingSignals.moonSaturnHard >= 0);
+  assert.ok(timingSignals.moonMercuryHard >= 0);
 });

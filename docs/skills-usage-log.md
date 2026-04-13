@@ -16,3 +16,12 @@ Track non-trivial backend tasks to measure skill routing quality and real invoca
 | 2026-04-01 | Added LLM gateway telemetry, golden eval regressions, and cross-repo contract sync skill | node-api | mobile-server-contract-sync, skill-creator | Completed |
 | 2026-04-01 | Normalized server import style across astrology and jobs modules | node-api | none | Completed |
 | 2026-04-01 | Added shared LLM retry policy, persisted telemetry, scripts tsconfig, and lint gates across repos | node-api | testing-quality, mobile-server-contract-sync | Completed |
+| 2026-04-10 | Added lunar productivity planner/dispatch scheduler, runtime lock/env wiring, and current-day timing contract handling | node-api | mobile-server-contract-sync, mongo-contracts | Completed |
+| 2026-04-10 | Switched lunar productivity push thresholds to extreme supportive/disruptive bands and updated scheduler direction handling | node-api | mobile-server-contract-sync, mongo-contracts | Completed |
+| 2026-04-10 | Added lunar in-app acknowledge flow, impact-direction contract fields, and same-day view suppression for pending pushes | node-api | mobile-server-contract-sync, mongo-contracts | Completed |
+| 2026-04-10 | Rewrote lunar productivity push copy and timezone validation toward action-oriented production guidance | node-api | mobile-server-contract-sync, testing-quality | Completed |
+| 2026-04-11 | Scoped lunar productivity same-day jobs to the active birth-profile hash to avoid stale onboarding timing collisions | node-api | mobile-server-contract-sync, mongo-contracts, testing-quality | Completed |
+| 2026-04-12 | Hardened burnout alert planner with profileHash-scoped jobs, in-app seen acknowledgement, stale-job cancellation, and production push copy | node-api | mobile-server-contract-sync, mongo-contracts, testing-quality | Completed |
+| 2026-04-13 | Removed synchronous AI synergy generation from burnout and lunar alert plan paths | node-api | mobile-server-contract-sync, testing-quality | Completed |
+| 2026-04-13 | Added burnout hourly stress scheduling, push-token scheduler guards, and scheduler regression tests | node-api | mobile-server-contract-sync, testing-quality | Completed |
+| 2026-04-13 | Added durable burnout alert event trail for scheduler and seen outcomes | node-api | mongo-contracts, mobile-server-contract-sync, testing-quality | Completed |

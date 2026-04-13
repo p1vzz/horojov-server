@@ -9,13 +9,19 @@ import {
 } from '../db/mongo.js';
 import { runWithConcurrency } from './asyncPool.js';
 import { buildTodayDate, getOrCreateDailyTransitForUser } from './dailyTransit.js';
-import { calculateBurnoutRisk } from './burnoutAlerts.js';
+import {
+  calculateBurnoutRisk,
+  isBurnoutAlertJobCurrentForTransit,
+  recordBurnoutAlertEvent,
+  type BurnoutAlertEventInput,
+} from './burnoutAlerts.js';
 import { runWithSchedulerLock } from './schedulerLockPolicy.js';
 
 const BURNOUT_ALERT_COOLDOWN_HOURS = 20;
 const MIN_LEAD_BEFORE_PEAK_MINUTES = 10;
 const MIN_SCHEDULE_AHEAD_MINUTES = 5;
 const DISPATCH_BATCH_SIZE = 50;
+export const BURNOUT_SAMPLE_LOCAL_HOURS = [8, 10, 12, 14, 16, 18, 20] as const;
 const FORCED_SEVERITY_MIN_SCORE: Record<BurnoutAlertSeverity, number> = {
   warn: 55,
   high: 70,
@@ -30,16 +36,16 @@ const SEVERITY_LEAD_MINUTES: Record<BurnoutAlertSeverity, number> = {
 
 const BURNOUT_PUSH_COPY: Record<BurnoutAlertSeverity, { title: string; body: string }> = {
   warn: {
-    title: 'Cosmic Battery: 40% \uD83D\uDD0B',
-    body: 'The stars suggest slowing down. Your Career Score is dipping today; maybe reschedule that big meeting for tomorrow?',
+    title: 'Protect Your Energy Today',
+    body: 'Workload pressure is rising. Keep one priority task, batch messages, and leave a real break before the next push.',
   },
   high: {
-    title: 'Burnout Risk: High \u26A0\uFE0F',
-    body: "Mars is opposing your productivity. Don't try to outdo yourself today; save your strength for a breakthrough this Thursday.",
+    title: 'Cut Context Switching Now',
+    body: 'Burnout pressure is high. Finish the main task first, move low-value meetings, and avoid taking on new work today.',
   },
   critical: {
-    title: 'System Overheat! \u2604\uFE0F',
-    body: "Your Energy Level is at a critical low. Close your laptop now. Even Saturn doesn't work 24/7, and neither should you.",
+    title: 'Reduce Load Before It Spikes',
+    body: 'Your recovery buffer is thin. Pause new commitments, close one critical item, and schedule recovery time before more deep work.',
   },
 };
 
@@ -73,7 +79,24 @@ type PlanResult =
   | { status: 'already_sent'; meta?: Record<string, unknown> }
   | { status: 'failed'; reason: string; meta?: Record<string, unknown> };
 
+export type BurnoutHourlyStressScore = {
+  hour: number;
+  score: number;
+};
+
+type BurnoutPeakPrediction = {
+  hour: number;
+  predictedPeakMinute: number;
+  hourlyScores: BurnoutHourlyStressScore[];
+};
+
+type BurnoutRiskForTiming = ReturnType<typeof calculateBurnoutRisk>;
+
 const dateTimeFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
 
 function getDateTimeFormatter(timezoneIana: string) {
   const cached = dateTimeFormatterCache.get(timezoneIana);
@@ -192,20 +215,175 @@ function localDateTimeToUtc(parts: LocalDateTimeParts, timezoneIana: string) {
   return new Date(utcTs);
 }
 
-function computeSchedule(input: {
+function resolveWorkdayMidHour(settings: Pick<BurnoutAlertSettingsDoc, 'workdayStartMinute' | 'workdayEndMinute'>) {
+  return (settings.workdayStartMinute + settings.workdayEndMinute) / 120;
+}
+
+function resolveSaturnTimingHousePressure(house: number | null) {
+  if (house === 12) return 14;
+  if (house === 10) return 12;
+  if (house === 6) return 10;
+  if (house === 8) return 8;
+  if (house === 1) return 6;
+  return 4;
+}
+
+function resolveMoonTimingHousePressure(house: number | null) {
+  if (house === 12) return 12;
+  if (house === 8) return 10;
+  if (house === 6) return 9;
+  if (house === 10) return 8;
+  if (house === 3) return 7;
+  return 4;
+}
+
+const SATURN_HOUSE_PEAK_HOURS: Record<number, number> = {
+  1: 9,
+  6: 11,
+  8: 14,
+  10: 15,
+  12: 16,
+};
+
+const MOON_HOUSE_PEAK_HOURS: Record<number, number> = {
+  3: 11,
+  6: 10,
+  8: 15,
+  10: 16,
+  12: 17,
+};
+
+function resolveHousePeakHour(
+  house: number | null,
+  peakHours: Record<number, number>,
+  fallbackHour: number,
+) {
+  if (house === null) return fallbackHour;
+  return peakHours[house] ?? fallbackHour;
+}
+
+function resolveBurnoutTargetStressHour(input: {
+  settings: Pick<BurnoutAlertSettingsDoc, 'workdayStartMinute' | 'workdayEndMinute'>;
+  risk: BurnoutRiskForTiming;
+}) {
+  const workdayMidHour = resolveWorkdayMidHour(input.settings);
+  const saturnPressure = resolveSaturnTimingHousePressure(input.risk.signals.saturn.house);
+  const moonPressure = resolveMoonTimingHousePressure(input.risk.signals.moon.house);
+  const pressureTotal = Math.max(1, saturnPressure + moonPressure);
+  const saturnWeight = saturnPressure / pressureTotal;
+  const moonWeight = moonPressure / pressureTotal;
+  const saturnHour = resolveHousePeakHour(
+    input.risk.signals.saturn.house,
+    SATURN_HOUSE_PEAK_HOURS,
+    workdayMidHour,
+  );
+  const moonHour = resolveHousePeakHour(input.risk.signals.moon.house, MOON_HOUSE_PEAK_HOURS, workdayMidHour);
+  const focusMomentum = input.risk.signals.momentum.focus;
+  const energyFocusSpread = input.risk.signals.momentum.energy - focusMomentum;
+  const momentumShift =
+    focusMomentum <= -5 || energyFocusSpread >= 8
+      ? -1
+      : focusMomentum >= 4 && energyFocusSpread <= 3
+        ? 1
+        : 0;
+  const targetHour =
+    saturnHour * (0.34 + saturnWeight * 0.2) +
+    moonHour * (0.3 + moonWeight * 0.18) +
+    workdayMidHour * 0.16 +
+    momentumShift;
+
+  return clamp(Math.round(targetHour), 8, 20);
+}
+
+export function estimateBurnoutHourlyStressScores(input: {
+  riskScore: number;
+  settings: Pick<BurnoutAlertSettingsDoc, 'workdayStartMinute' | 'workdayEndMinute'>;
+  risk: BurnoutRiskForTiming;
+}) {
+  const targetHour = resolveBurnoutTargetStressHour(input);
+  const saturnPeakHour = resolveHousePeakHour(
+    input.risk.signals.saturn.house,
+    SATURN_HOUSE_PEAK_HOURS,
+    targetHour,
+  );
+  const moonPeakHour = resolveHousePeakHour(input.risk.signals.moon.house, MOON_HOUSE_PEAK_HOURS, targetHour);
+  const saturnHousePressure = resolveSaturnTimingHousePressure(input.risk.signals.saturn.house);
+  const moonHousePressure = resolveMoonTimingHousePressure(input.risk.signals.moon.house);
+
+  return BURNOUT_SAMPLE_LOCAL_HOURS.map((hour) => {
+    const targetAlignment = clamp(1 - Math.abs(hour - targetHour) / 8, 0.2, 1);
+    const saturnAlignment = clamp(1 - Math.abs(hour - saturnPeakHour) / 8, 0.2, 1);
+    const moonAlignment = clamp(1 - Math.abs(hour - moonPeakHour) / 7, 0.2, 1);
+    const positiveAlignment = clamp(1 - Math.abs(hour - (targetHour - 2)) / 9, 0.2, 1);
+    const hourHardStrength =
+      (input.risk.signals.saturnHardCount +
+        input.risk.signals.moonHardCount +
+        input.risk.signals.saturnMoonHard) *
+      targetAlignment;
+    const hourSaturnHard = input.risk.signals.saturnHardCount * saturnAlignment;
+    const hourMoonHard = input.risk.signals.moonHardCount * moonAlignment;
+    const hourSaturnMoonHard = input.risk.signals.saturnMoonHard * targetAlignment;
+    const hourPositiveStrength = input.risk.signals.positiveAspectStrength * positiveAlignment;
+    const score = clamp(
+      input.riskScore * 0.52 +
+        hourHardStrength * 6 +
+        hourSaturnHard * 8 +
+        hourMoonHard * 7 +
+        hourSaturnMoonHard * 10 +
+        saturnHousePressure * 0.9 * saturnAlignment +
+        moonHousePressure * 0.8 * moonAlignment -
+        hourPositiveStrength * 4,
+      0,
+      100,
+    );
+
+    return {
+      hour,
+      score: Number(score.toFixed(2)),
+    } satisfies BurnoutHourlyStressScore;
+  });
+}
+
+export function resolveBurnoutPredictedPeakLocalMinute(input: {
+  riskScore: number;
+  settings: Pick<BurnoutAlertSettingsDoc, 'workdayStartMinute' | 'workdayEndMinute'>;
+  risk: BurnoutRiskForTiming;
+}): BurnoutPeakPrediction {
+  const hourlyScores = estimateBurnoutHourlyStressScores(input);
+  let best = hourlyScores[0];
+
+  for (const candidate of hourlyScores.slice(1)) {
+    if (candidate.score > (best?.score ?? Number.NEGATIVE_INFINITY)) {
+      best = candidate;
+      continue;
+    }
+    if (candidate.score === best?.score && candidate.hour < best.hour) {
+      best = candidate;
+    }
+  }
+
+  const hour = best?.hour ?? BURNOUT_SAMPLE_LOCAL_HOURS[0];
+  return {
+    hour,
+    predictedPeakMinute: hour * 60 + 30,
+    hourlyScores,
+  };
+}
+
+export function computeBurnoutScheduleFromPredictedPeakMinute(input: {
   now: Date;
   settings: BurnoutAlertSettingsDoc;
   severity: BurnoutAlertSeverity;
+  predictedPeakMinute: number;
 }): ScheduleResult {
-  const { now, settings, severity } = input;
+  const { now, settings, severity, predictedPeakMinute } = input;
   const leadMinutes = SEVERITY_LEAD_MINUTES[severity];
-  const baseCandidateUtc = new Date(now.getTime() + env.BURNOUT_ALERT_SCHEDULE_DELAY_SECONDS * 1000);
-  const basePredictedPeakAt = new Date(baseCandidateUtc.getTime() + leadMinutes * 60_000);
-
   const todayLocal = toLocalDateTimeParts(now, settings.timezoneIana);
   const todayDateKey = localDateKey(todayLocal);
+  const predictedPeakLocal = applyMinuteWithOverflow(todayLocal, predictedPeakMinute);
+  const predictedPeakAt = localDateTimeToUtc(predictedPeakLocal, settings.timezoneIana);
 
-  let candidateLocal = toLocalDateTimeParts(baseCandidateUtc, settings.timezoneIana);
+  let candidateLocal = applyMinuteWithOverflow(todayLocal, predictedPeakMinute - leadMinutes);
   candidateLocal = moveOutOfQuietWindow(
     candidateLocal,
     settings.quietHoursStartMinute,
@@ -216,7 +394,7 @@ function computeSchedule(input: {
     return {
       status: 'skip',
       reason: 'candidate moved outside local day',
-      predictedPeakAt: basePredictedPeakAt,
+      predictedPeakAt,
       dateKey: todayDateKey,
     };
   }
@@ -224,22 +402,15 @@ function computeSchedule(input: {
   const candidateMinute = minuteOfDay(candidateLocal);
   if (candidateMinute < settings.workdayStartMinute) {
     candidateLocal = applyMinuteWithOverflow(candidateLocal, settings.workdayStartMinute);
-  }
-
-  if (minuteOfDay(candidateLocal) > settings.workdayEndMinute) {
-    return {
-      status: 'skip',
-      reason: 'candidate is after workday end',
-      predictedPeakAt: basePredictedPeakAt,
-      dateKey: todayDateKey,
-    };
+  } else if (candidateMinute > settings.workdayEndMinute) {
+    candidateLocal = applyMinuteWithOverflow(candidateLocal, settings.workdayEndMinute);
   }
 
   if (localDateKey(candidateLocal) !== todayDateKey) {
     return {
       status: 'skip',
       reason: 'workday clamp moved candidate outside local day',
-      predictedPeakAt: basePredictedPeakAt,
+      predictedPeakAt,
       dateKey: todayDateKey,
     };
   }
@@ -247,10 +418,18 @@ function computeSchedule(input: {
   let scheduledAt = localDateTimeToUtc(candidateLocal, settings.timezoneIana);
   const minScheduleAt = new Date(now.getTime() + MIN_SCHEDULE_AHEAD_MINUTES * 60_000);
   if (scheduledAt.getTime() < minScheduleAt.getTime()) {
+    const latestAllowedAt = predictedPeakAt.getTime() - MIN_LEAD_BEFORE_PEAK_MINUTES * 60_000;
+    if (minScheduleAt.getTime() > latestAllowedAt) {
+      return {
+        status: 'skip',
+        reason: 'minimum schedule window is later than allowed lead',
+        predictedPeakAt,
+        dateKey: todayDateKey,
+      };
+    }
     scheduledAt = minScheduleAt;
   }
 
-  const predictedPeakAt = new Date(scheduledAt.getTime() + leadMinutes * 60_000);
   const latestAllowedAt = predictedPeakAt.getTime() - MIN_LEAD_BEFORE_PEAK_MINUTES * 60_000;
   if (scheduledAt.getTime() > latestAllowedAt) {
     return {
@@ -267,6 +446,13 @@ function computeSchedule(input: {
     predictedPeakAt,
     dateKey: todayDateKey,
   };
+}
+
+export function shouldStartBurnoutAlertScheduler(input: {
+  enabled: boolean;
+  expoPushAccessToken: string;
+}) {
+  return input.enabled && input.expoPushAccessToken.trim().length > 0;
 }
 
 function isDeviceNotRegistered(details: unknown) {
@@ -391,8 +577,65 @@ async function markUserPlannedJobCancelled(
   );
 }
 
+async function markCurrentDayPlanCancelled(input: {
+  collections: MongoCollections;
+  logger: FastifyBaseLogger;
+  userId: ObjectId;
+  dateKey: string;
+  now: Date;
+  reason: string;
+}) {
+  const result = await input.collections.burnoutAlertJobs.updateOne(
+    {
+      userId: input.userId,
+      dateKey: input.dateKey,
+      status: 'planned',
+    },
+    {
+      $set: {
+        status: 'cancelled',
+        scheduledAt: null,
+        lastError: input.reason,
+        updatedAt: input.now,
+      },
+    }
+  );
+  if (result.modifiedCount > 0) {
+    await recordBurnoutSchedulerEvent(input.collections, input.logger, {
+      userId: input.userId,
+      dateKey: input.dateKey,
+      type: 'cancelled',
+      reason: input.reason,
+      now: input.now,
+    });
+  }
+}
+
 function toIsoOrNull(value: Date | null | undefined) {
   return value ? value.toISOString() : null;
+}
+
+async function recordBurnoutSchedulerEvent(
+  collections: MongoCollections,
+  logger: FastifyBaseLogger,
+  input: BurnoutAlertEventInput
+) {
+  try {
+    await recordBurnoutAlertEvent({
+      collections,
+      ...input,
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        error,
+        eventType: input.type,
+        userId: input.userId.toHexString(),
+        dateKey: input.dateKey ?? null,
+      },
+      'burnout alert event recording failed'
+    );
+  }
 }
 
 function resolveEffectiveSubscriptionTier(input: 'free' | 'premium' | undefined) {
@@ -424,7 +667,9 @@ async function planBurnoutAlertForUser(
 
   let transit;
   try {
-    transit = await getOrCreateDailyTransitForUser(settings.userId, buildTodayDate(), logger);
+    transit = await getOrCreateDailyTransitForUser(settings.userId, buildTodayDate(), logger, {
+      includeAiSynergy: false,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'daily transit build failed';
     if (message.includes('Birth profile not found')) {
@@ -449,6 +694,14 @@ async function planBurnoutAlertForUser(
     : risk.riskScore;
 
   if (effectiveSeverity === 'none' || effectiveRiskScore < env.BURNOUT_ALERT_MIN_SCORE) {
+    await markCurrentDayPlanCancelled({
+      collections,
+      logger,
+      userId: settings.userId,
+      dateKey: transit.doc.dateKey,
+      now,
+      reason: 'risk below threshold',
+    });
     return {
       status: 'skipped',
       reason: 'risk below threshold',
@@ -460,14 +713,20 @@ async function planBurnoutAlertForUser(
     };
   }
 
-  const schedule = computeSchedule({
+  const peakPrediction = resolveBurnoutPredictedPeakLocalMinute({
+    riskScore: effectiveRiskScore,
+    settings,
+    risk,
+  });
+  const schedule = computeBurnoutScheduleFromPredictedPeakMinute({
     now,
     settings,
     severity: effectiveSeverity,
+    predictedPeakMinute: peakPrediction.predictedPeakMinute,
   });
   const dateKey = schedule.dateKey;
 
-  const existingJob = await collections.burnoutAlertJobs.findOne(
+  const latestJob = await collections.burnoutAlertJobs.findOne(
     {
       userId: settings.userId,
       dateKey,
@@ -479,17 +738,35 @@ async function planBurnoutAlertForUser(
         scheduledAt: 1,
         severity: 1,
         riskScore: 1,
+        seenAt: 1,
+        profileHash: 1,
+        lastError: 1,
+        updatedAt: 1,
       },
     }
   );
-  if (existingJob?.status === 'sent') {
+  const existingJob = isBurnoutAlertJobCurrentForTransit(latestJob, transit.doc) ? latestJob : null;
+
+  if (latestJob?.status === 'sent') {
     return {
       status: 'already_sent',
       meta: {
         dateKey,
-        sentAt: toIsoOrNull(existingJob.sentAt),
+        sentAt: toIsoOrNull(latestJob.sentAt),
+        severity: latestJob.severity,
+        riskScore: latestJob.riskScore,
+      },
+    };
+  }
+  if (existingJob?.seenAt) {
+    return {
+      status: 'skipped',
+      reason: 'viewed in app',
+      meta: {
+        dateKey,
         severity: existingJob.severity,
         riskScore: existingJob.riskScore,
+        seenAt: existingJob.seenAt.toISOString(),
       },
     };
   }
@@ -506,10 +783,16 @@ async function planBurnoutAlertForUser(
   }
 
   if (recentSentAt) {
+    const reason = 'cooldown active';
+    const shouldRecordEvent =
+      latestJob?.status !== 'skipped' ||
+      latestJob.lastError !== reason ||
+      !isBurnoutAlertJobCurrentForTransit(latestJob, transit.doc);
     await collections.burnoutAlertJobs.updateOne(
       { userId: settings.userId, dateKey },
       {
         $set: {
+          profileHash: transit.doc.profileHash,
           severity: effectiveSeverity,
           riskScore: effectiveRiskScore,
           predictedPeakAt: schedule.predictedPeakAt,
@@ -517,7 +800,7 @@ async function planBurnoutAlertForUser(
           status: 'skipped',
           providerMessageId: null,
           sentAt: null,
-          lastError: 'cooldown active',
+          lastError: reason,
           updatedAt: now,
         },
         $setOnInsert: {
@@ -527,9 +810,25 @@ async function planBurnoutAlertForUser(
       },
       { upsert: true }
     );
+    if (shouldRecordEvent) {
+      await recordBurnoutSchedulerEvent(collections, logger, {
+        userId: settings.userId,
+        jobId: latestJob?._id ?? null,
+        profileHash: transit.doc.profileHash,
+        dateKey,
+        type: 'skipped',
+        severity: effectiveSeverity,
+        riskScore: effectiveRiskScore,
+        reason,
+        metadata: {
+          recentSentAt: toIsoOrNull(recentSentAt),
+        },
+        now,
+      });
+    }
     return {
       status: 'skipped',
-      reason: 'cooldown active',
+      reason,
       meta: {
         dateKey,
         severity: effectiveSeverity,
@@ -540,10 +839,16 @@ async function planBurnoutAlertForUser(
   }
 
   if (!hasActivePushToken) {
+    const reason = 'active push token is missing';
+    const shouldRecordEvent =
+      latestJob?.status !== 'skipped' ||
+      latestJob.lastError !== reason ||
+      !isBurnoutAlertJobCurrentForTransit(latestJob, transit.doc);
     await collections.burnoutAlertJobs.updateOne(
       { userId: settings.userId, dateKey },
       {
         $set: {
+          profileHash: transit.doc.profileHash,
           severity: effectiveSeverity,
           riskScore: effectiveRiskScore,
           predictedPeakAt: schedule.predictedPeakAt,
@@ -551,7 +856,7 @@ async function planBurnoutAlertForUser(
           status: 'skipped',
           providerMessageId: null,
           sentAt: null,
-          lastError: 'active push token is missing',
+          lastError: reason,
           updatedAt: now,
         },
         $setOnInsert: {
@@ -561,9 +866,22 @@ async function planBurnoutAlertForUser(
       },
       { upsert: true }
     );
+    if (shouldRecordEvent) {
+      await recordBurnoutSchedulerEvent(collections, logger, {
+        userId: settings.userId,
+        jobId: latestJob?._id ?? null,
+        profileHash: transit.doc.profileHash,
+        dateKey,
+        type: 'skipped',
+        severity: effectiveSeverity,
+        riskScore: effectiveRiskScore,
+        reason,
+        now,
+      });
+    }
     return {
       status: 'skipped',
-      reason: 'active push token is missing',
+      reason,
       meta: {
         dateKey,
         severity: effectiveSeverity,
@@ -573,10 +891,16 @@ async function planBurnoutAlertForUser(
   }
 
   if (schedule.status === 'skip') {
+    const reason = schedule.reason;
+    const shouldRecordEvent =
+      latestJob?.status !== 'skipped' ||
+      latestJob.lastError !== reason ||
+      !isBurnoutAlertJobCurrentForTransit(latestJob, transit.doc);
     await collections.burnoutAlertJobs.updateOne(
       { userId: settings.userId, dateKey },
       {
         $set: {
+          profileHash: transit.doc.profileHash,
           severity: effectiveSeverity,
           riskScore: effectiveRiskScore,
           predictedPeakAt: schedule.predictedPeakAt,
@@ -584,7 +908,7 @@ async function planBurnoutAlertForUser(
           status: 'skipped',
           providerMessageId: null,
           sentAt: null,
-          lastError: schedule.reason,
+          lastError: reason,
           updatedAt: now,
         },
         $setOnInsert: {
@@ -594,9 +918,27 @@ async function planBurnoutAlertForUser(
       },
       { upsert: true }
     );
+    if (shouldRecordEvent) {
+      await recordBurnoutSchedulerEvent(collections, logger, {
+        userId: settings.userId,
+        jobId: latestJob?._id ?? null,
+        profileHash: transit.doc.profileHash,
+        dateKey,
+        type: 'skipped',
+        severity: effectiveSeverity,
+        riskScore: effectiveRiskScore,
+        reason,
+        metadata: {
+          predictedPeakAt: schedule.predictedPeakAt.toISOString(),
+          peakHour: peakPrediction.hour,
+          hourlyStressPeakScore: peakPrediction.hourlyScores.find((entry) => entry.hour === peakPrediction.hour)?.score ?? null,
+        },
+        now,
+      });
+    }
     return {
       status: 'skipped',
-      reason: schedule.reason,
+      reason,
       meta: {
         dateKey,
         timezoneIana: settings.timezoneIana,
@@ -607,6 +949,8 @@ async function planBurnoutAlertForUser(
         severity: effectiveSeverity,
         riskScore: effectiveRiskScore,
         predictedPeakAt: schedule.predictedPeakAt.toISOString(),
+        peakHour: peakPrediction.hour,
+        hourlyStressPeakScore: peakPrediction.hourlyScores.find((entry) => entry.hour === peakPrediction.hour)?.score ?? null,
       },
     };
   }
@@ -615,6 +959,7 @@ async function planBurnoutAlertForUser(
     { userId: settings.userId, dateKey },
     {
       $set: {
+        profileHash: transit.doc.profileHash,
         severity: effectiveSeverity,
         riskScore: effectiveRiskScore,
         predictedPeakAt: schedule.predictedPeakAt,
@@ -632,6 +977,22 @@ async function planBurnoutAlertForUser(
     },
     { upsert: true }
   );
+  await recordBurnoutSchedulerEvent(collections, logger, {
+    userId: settings.userId,
+    jobId: latestJob?._id ?? null,
+    profileHash: transit.doc.profileHash,
+    dateKey,
+    type: 'planned',
+    severity: effectiveSeverity,
+    riskScore: effectiveRiskScore,
+    metadata: {
+      scheduledAt: schedule.scheduledAt.toISOString(),
+      predictedPeakAt: schedule.predictedPeakAt.toISOString(),
+      peakHour: peakPrediction.hour,
+      hourlyStressPeakScore: peakPrediction.hourlyScores.find((entry) => entry.hour === peakPrediction.hour)?.score ?? null,
+    },
+    now,
+  });
 
   return {
     status: 'planned',
@@ -641,6 +1002,8 @@ async function planBurnoutAlertForUser(
       riskScore: effectiveRiskScore,
       scheduledAt: schedule.scheduledAt.toISOString(),
       predictedPeakAt: schedule.predictedPeakAt.toISOString(),
+      peakHour: peakPrediction.hour,
+      hourlyStressPeakScore: peakPrediction.hourlyScores.find((entry) => entry.hour === peakPrediction.hour)?.score ?? null,
     },
   };
 }
@@ -825,6 +1188,8 @@ async function runDispatchPass(logger: FastifyBaseLogger) {
         dateKey: 1,
         severity: 1,
         riskScore: 1,
+        profileHash: 1,
+        updatedAt: 1,
       },
     })
     .sort({
@@ -837,11 +1202,17 @@ async function runDispatchPass(logger: FastifyBaseLogger) {
   }
   const userIdMap = new Map(dueJobs.map((job) => [job.userId.toHexString(), job.userId]));
   const userIds = Array.from(userIdMap.values());
-  const [users, settingsDocs, activeTokens] = await Promise.all([
+  const [users, profiles, settingsDocs, activeTokens] = await Promise.all([
     collections.users
       .find(
         { _id: { $in: userIds } },
         { projection: { _id: 1, subscriptionTier: 1 } }
+      )
+      .toArray(),
+    collections.birthProfiles
+      .find(
+        { userId: { $in: userIds } },
+        { projection: { userId: 1, profileHash: 1, updatedAt: 1 } }
       )
       .toArray(),
     collections.burnoutAlertSettings
@@ -888,6 +1259,9 @@ async function runDispatchPass(logger: FastifyBaseLogger) {
   const subscriptionTierByUserId = new Map(
     users.map((user) => [user._id.toHexString(), user.subscriptionTier])
   );
+  const profileByUserId = new Map(
+    profiles.map((profile) => [profile.userId.toHexString(), profile])
+  );
   const settingsEnabledByUserId = new Map(
     settingsDocs.map((settings) => [settings.userId.toHexString(), settings.enabled === true])
   );
@@ -909,34 +1283,94 @@ async function runDispatchPass(logger: FastifyBaseLogger) {
       const effectiveTier = resolveEffectiveSubscriptionTier(
         subscriptionTierByUserId.get(userHex)
       );
+      const profile = profileByUserId.get(userHex) ?? null;
       const settingsEnabled = settingsEnabledByUserId.get(userHex) === true;
       const token = activeTokenByUserId.get(userHex) ?? null;
 
       if (effectiveTier !== 'premium' || !settingsEnabled) {
+        const reason = !settingsEnabled ? 'burnout settings disabled' : 'premium is required';
         await collections.burnoutAlertJobs.updateOne(
           { _id: job._id },
           {
             $set: {
               status: 'cancelled',
-              lastError: !settingsEnabled ? 'burnout settings disabled' : 'premium is required',
+              lastError: reason,
               updatedAt: now,
             },
           }
         );
+        await recordBurnoutSchedulerEvent(collections, logger, {
+          userId: job.userId,
+          jobId: job._id,
+          profileHash: typeof job.profileHash === 'string' ? job.profileHash : null,
+          dateKey: job.dateKey,
+          type: 'cancelled',
+          severity: job.severity,
+          riskScore: job.riskScore,
+          reason,
+          now,
+        });
         cancelled += 1;
         return;
       }
+      const jobProfileHash = typeof job.profileHash === 'string' && job.profileHash.trim().length > 0 ? job.profileHash : null;
+      const staleJob =
+        !profile ||
+        (jobProfileHash
+          ? jobProfileHash !== profile.profileHash
+          : job.updatedAt.getTime() < profile.updatedAt.getTime());
+
+      if (staleJob) {
+        const reason = profile ? 'birth profile changed before dispatch' : 'birth profile is required';
+        await collections.burnoutAlertJobs.updateOne(
+          { _id: job._id },
+          {
+            $set: {
+              status: 'cancelled',
+              scheduledAt: null,
+              lastError: reason,
+              updatedAt: now,
+            },
+          }
+        );
+        await recordBurnoutSchedulerEvent(collections, logger, {
+          userId: job.userId,
+          jobId: job._id,
+          profileHash: typeof job.profileHash === 'string' ? job.profileHash : null,
+          dateKey: job.dateKey,
+          type: 'cancelled',
+          severity: job.severity,
+          riskScore: job.riskScore,
+          reason,
+          now,
+        });
+        cancelled += 1;
+        return;
+      }
+
       if (!token) {
+        const reason = 'active push token is missing at dispatch time';
         await collections.burnoutAlertJobs.updateOne(
           { _id: job._id },
           {
             $set: {
               status: 'failed',
-              lastError: 'active push token is missing at dispatch time',
+              lastError: reason,
               updatedAt: now,
             },
           }
         );
+        await recordBurnoutSchedulerEvent(collections, logger, {
+          userId: job.userId,
+          jobId: job._id,
+          profileHash: typeof job.profileHash === 'string' ? job.profileHash : null,
+          dateKey: job.dateKey,
+          type: 'failed',
+          severity: job.severity,
+          riskScore: job.riskScore,
+          reason,
+          now,
+        });
         failed += 1;
         return;
       }
@@ -959,6 +1393,20 @@ async function runDispatchPass(logger: FastifyBaseLogger) {
             },
           }
         );
+        await recordBurnoutSchedulerEvent(collections, logger, {
+          userId: job.userId,
+          jobId: job._id,
+          profileHash: typeof job.profileHash === 'string' ? job.profileHash : null,
+          dateKey: job.dateKey,
+          type: 'failed',
+          severity: job.severity,
+          riskScore: job.riskScore,
+          reason: pushResult.error,
+          metadata: {
+            deviceNotRegistered: pushResult.deviceNotRegistered,
+          },
+          now,
+        });
         if (pushResult.deviceNotRegistered) {
           await collections.pushNotificationTokens.updateOne(
             { _id: token._id },
@@ -986,8 +1434,20 @@ async function runDispatchPass(logger: FastifyBaseLogger) {
           },
         }
       );
+      await recordBurnoutSchedulerEvent(collections, logger, {
+        userId: job.userId,
+        jobId: job._id,
+        profileHash: typeof job.profileHash === 'string' ? job.profileHash : null,
+        dateKey: job.dateKey,
+        type: 'sent',
+        severity: job.severity,
+        riskScore: job.riskScore,
+        providerMessageId: pushResult.messageId,
+        now,
+      });
       sent += 1;
     } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unexpected dispatch error';
       failed += 1;
       logger.error(
         {
@@ -1002,11 +1462,22 @@ async function runDispatchPass(logger: FastifyBaseLogger) {
         {
           $set: {
             status: 'failed',
-            lastError: error instanceof Error ? error.message : 'unexpected dispatch error',
+            lastError: reason,
             updatedAt: now,
           },
         }
       );
+      await recordBurnoutSchedulerEvent(collections, logger, {
+        userId: job.userId,
+        jobId: job._id,
+        profileHash: typeof job.profileHash === 'string' ? job.profileHash : null,
+        dateKey: job.dateKey,
+        type: 'failed',
+        severity: job.severity,
+        riskScore: job.riskScore,
+        reason,
+        now,
+      });
     }
   });
 
@@ -1030,8 +1501,12 @@ export function startBurnoutAlertScheduler(logger: FastifyBaseLogger) {
     return () => undefined;
   }
 
-  if (!env.EFFECTIVE_EXPO_PUSH_ACCESS_TOKEN) {
-    logger.warn('burnout alert scheduler started without EXPO push token');
+  if (!shouldStartBurnoutAlertScheduler({
+    enabled: env.BURNOUT_ALERTS_ENABLED,
+    expoPushAccessToken: env.EFFECTIVE_EXPO_PUSH_ACCESS_TOKEN,
+  })) {
+    logger.error('burnout alert scheduler disabled because EXPO push token is missing');
+    return () => undefined;
   }
 
   let timer: NodeJS.Timeout | null = null;
@@ -1071,7 +1546,7 @@ export function startBurnoutAlertScheduler(logger: FastifyBaseLogger) {
     {
       intervalSeconds: env.BURNOUT_ALERT_CHECK_INTERVAL_SECONDS,
       minScore: env.BURNOUT_ALERT_MIN_SCORE,
-      scheduleDelaySeconds: env.BURNOUT_ALERT_SCHEDULE_DELAY_SECONDS,
+      sampleLocalHours: BURNOUT_SAMPLE_LOCAL_HOURS,
       planningConcurrency: env.BURNOUT_ALERT_PLAN_CONCURRENCY,
       dispatchConcurrency: env.BURNOUT_ALERT_DISPATCH_CONCURRENCY,
     },
