@@ -1,4 +1,5 @@
 import type { FastifyInstance, RouteHandlerMethod } from 'fastify';
+import { env } from '../config/env.js';
 import { authenticateByAuthorizationHeader } from '../services/auth.js';
 import {
   evaluateJobMetricsAlerts,
@@ -34,6 +35,7 @@ const defaultDeps: JobsRouteDependencies = {
   getCurrentUsageLimitState,
   collectJobMetrics,
   evaluateJobMetricsAlerts,
+  jobMetricsEndpointsEnabled: env.JOB_METRICS_ENDPOINTS_ENABLED,
   handleJobPreflight,
   handleJobAnalyzeScreenshots,
   handleJobAnalyze,

@@ -157,7 +157,9 @@ Auth:
 
 Validation:
 - zod payload constraints
-- timezone/workday/quiet-hours guard rails (`400` on invalid values)
+- `enabled` and `timezoneIana` are the active controls.
+- legacy workday/duration/weekday fields remain accepted for older clients, but the planner now uses a fixed backend range policy.
+- timezone/workday/quiet-hours guard rails (`400` on invalid legacy values)
 
 Success:
 - returns `{ settings }`
@@ -177,7 +179,14 @@ Query:
 
 Error behavior:
 - invalid query -> `400`
+- missing birth profile or natal chart -> `404`
 - planning failures -> `502`
+
+Current planning behavior:
+- server requires the active natal chart and blends transit-to-natal interview signals with daily career momentum and AI synergy.
+- generated calendar windows are sparse: up to 4-5 strongest windows per 30-day horizon, with one 1-3 hour range per selected day.
+- slots below `INTERVIEW_STRATEGY_MIN_SCORE` are not backfilled; the default threshold is `68`.
+- each returned slot includes `explanation` and `calendarNote`; mobile writes the short note into calendar event notes.
 
 ## Billing API (`/api/billing`)
 

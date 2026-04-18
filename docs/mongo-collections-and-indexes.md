@@ -1,6 +1,6 @@
 # Mongo Collections And Indexes
 **Status:** Active  
-**Last synced:** 2026-04-12
+**Last synced:** 2026-04-13
 
 ## Goal
 
@@ -26,6 +26,7 @@ If this document and code diverge, code is authoritative and this doc must be up
 - `natal_charts`
 - `daily_transits`
 - `ai_synergy_daily`
+- `career_vibe_daily`
 - `morning_briefing_daily`
 - `career_insights`
 - `full_natal_career_analysis`
@@ -78,6 +79,7 @@ If this document and code diverge, code is authoritative and this doc must be up
 - `career_insights.userId + profileHash + tier + promptVersion + model` unique
 - `daily_transits.userId + profileHash + dateKey` unique
 - `ai_synergy_daily.userId + profileHash + dateKey + algorithmVersion` unique
+- `career_vibe_daily.userId + profileHash + dateKey + schemaVersion + tier + promptVersion + model` unique
 - `morning_briefing_daily.userId + profileHash + dateKey + schemaVersion` unique
 - `full_natal_career_analysis.userId + profileHash + promptVersion + model` unique
 - `discover_role_catalog.slug` unique

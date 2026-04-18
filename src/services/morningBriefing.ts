@@ -8,6 +8,7 @@ import {
   type AiSynergyConfidenceBreakdownDoc,
 } from '../db/mongo.js';
 import { getOrCreateDailyTransitForUser } from './dailyTransit.js';
+import { buildCareerVibePlanView, toMorningBriefingPlanSnapshot } from './careerVibePlan.js';
 
 const MORNING_BRIEFING_SCHEMA_VERSION = 'morning-briefing-v2';
 
@@ -25,6 +26,13 @@ export type MorningBriefingView = {
     aiSynergy: number;
   };
   modeLabel: string;
+  plan?: {
+    headline: string;
+    summary: string;
+    primaryAction: string;
+    peakWindow: string;
+    riskGuardrail: string;
+  };
   insights?: {
     vibe: {
       algorithmVersion: string;
@@ -98,6 +106,7 @@ function toMorningBriefingView(doc: MorningBriefingDailyDoc, cached: boolean): M
       aiSynergy: doc.metrics.aiSynergy,
     },
     modeLabel: doc.modeLabel,
+    plan: doc.plan,
     insights: doc.insights,
     staleAfter: doc.staleAfter.toISOString(),
     sources: {
@@ -172,6 +181,24 @@ export async function getOrCreateMorningBriefingForUser(input: {
   const vibeDrivers = transit.doc.vibe.drivers ?? [];
   const vibeCautions = transit.doc.vibe.cautions ?? [];
   const vibeTags = transit.doc.vibe.tags ?? [];
+  const staleAfter = buildStaleAfter(dateKey, now);
+  const planSnapshot = toMorningBriefingPlanSnapshot(
+    buildCareerVibePlanView({
+      dateKey,
+      cached: false,
+      tier: 'premium',
+      generatedAt: now,
+      staleAfter,
+      transitVibe: transit.doc.vibe,
+      aiSynergy: transit.aiSynergy,
+      sources: {
+        dailyTransitDateKey: transit.doc.dateKey,
+        aiSynergyDateKey: transit.aiSynergy?.dateKey ?? null,
+        dailyVibeAlgorithmVersion: transit.doc.vibe.algorithmVersion,
+        aiSynergyAlgorithmVersion: transit.aiSynergy?.algorithmVersion ?? null,
+      },
+    })
+  );
 
   const generatedDoc: MorningBriefingDailyDoc = {
     _id: new ObjectId(),
@@ -188,6 +215,7 @@ export async function getOrCreateMorningBriefingForUser(input: {
       luck,
       aiSynergy: clampScore(aiSynergy),
     },
+    plan: planSnapshot,
     insights: {
       vibe: {
         algorithmVersion: transit.doc.vibe.algorithmVersion,
@@ -213,7 +241,7 @@ export async function getOrCreateMorningBriefingForUser(input: {
       aiSynergyDateKey: transit.aiSynergy?.dateKey ?? null,
     },
     generatedAt: now,
-    staleAfter: buildStaleAfter(dateKey, now),
+    staleAfter,
     createdAt: now,
     updatedAt: now,
   };
@@ -226,6 +254,7 @@ export async function getOrCreateMorningBriefingForUser(input: {
         summary: generatedDoc.summary,
         modeLabel: generatedDoc.modeLabel,
         metrics: generatedDoc.metrics,
+        plan: generatedDoc.plan,
         insights: generatedDoc.insights,
         sources: generatedDoc.sources,
         generatedAt: generatedDoc.generatedAt,

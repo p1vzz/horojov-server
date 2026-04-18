@@ -19,10 +19,13 @@
     "check:scripts": "tsc --noEmit -p scripts/tsconfig.json",
     "check": "npm run check:app && npm run check:scripts",
     "lint": "eslint . --max-warnings=0",
-    "test": "node --import tsx --test src/services/*.test.ts src/routes/*.test.ts src/runtime/*.test.ts",
+    "test": "node --import tsx --test src/config/*.test.ts src/services/*.test.ts src/routes/*.test.ts src/runtime/*.test.ts",
     "verify": "npm run check && npm run lint && npm test && npm run build",
+    "verify:quiet": "node scripts/run-quiet.mjs npm run verify",
     "smoke:routes": "node --import tsx scripts/ci-route-smoke.ts",
-    "ci:smoke": "npm run verify && npm run smoke:routes"
+    "smoke:routes:quiet": "node scripts/run-quiet.mjs npm run smoke:routes",
+    "ci:smoke": "npm run verify && npm run smoke:routes",
+    "ci:smoke:quiet": "node scripts/run-quiet.mjs npm run ci:smoke"
   },
   "keywords": [],
   "author": "",

@@ -50,6 +50,8 @@ export function registerAstrologyDiscoverRolesRoutes(
         limit: parsedQuery.data.limit,
         searchLimit: parsedQuery.data.searchLimit,
         refresh: parsedQuery.data.refresh,
+        deferSearchScores: parsedQuery.data.deferSearchScores,
+        scoreSlug: parsedQuery.data.scoreSlug,
         log: request.log,
       });
     } catch (error) {

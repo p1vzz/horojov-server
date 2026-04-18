@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { getProductionEnvGuardIssues } from './productionEnvGuards.js';
 
 const optionalNonEmptyString = z.preprocess(
   (value) => {
@@ -63,7 +64,7 @@ const envSchema = z.object({
   JOB_SCRAPER_NEGATIVE_TTL_BLOCKED_SECONDS: z.coerce.number().int().min(60).max(60 * 60 * 24 * 14).default(6 * 60 * 60),
   JOB_SCRAPER_NEGATIVE_TTL_LOGIN_WALL_SECONDS: z.coerce.number().int().min(60).max(60 * 60 * 24 * 14).default(6 * 60 * 60),
   JOB_SCRAPER_NEGATIVE_TTL_NOT_FOUND_SECONDS: z.coerce.number().int().min(60).max(60 * 60 * 24 * 30).default(24 * 60 * 60),
-  JOB_SCREENSHOT_MAX_IMAGES: z.coerce.number().int().min(1).max(8).default(4),
+  JOB_SCREENSHOT_MAX_IMAGES: z.coerce.number().int().min(1).max(8).default(6),
   JOB_SCREENSHOT_MAX_IMAGE_BYTES: z.coerce.number().int().min(100_000).max(10_000_000).default(1_600_000),
   JOB_SCREENSHOT_MAX_TOTAL_BYTES: z.coerce.number().int().min(300_000).max(30_000_000).default(6_000_000),
   OPENAI_API_KEY: optionalNonEmptyString,
@@ -85,6 +86,11 @@ const envSchema = z.object({
   OPENAI_AI_SYNERGY_PROMPT_VERSION: z.string().min(1).default('v2'),
   OPENAI_AI_SYNERGY_MAX_TOKENS: z.coerce.number().int().min(120).default(420),
   OPENAI_AI_SYNERGY_TEMPERATURE: z.coerce.number().min(0).max(1.2).default(0.45),
+  OPENAI_CAREER_VIBE_PLAN_ENABLED: envBoolean.default(true),
+  OPENAI_CAREER_VIBE_PLAN_MODEL: z.string().min(1).default('gpt-4o-mini'),
+  OPENAI_CAREER_VIBE_PLAN_PROMPT_VERSION: z.string().min(1).default('v1'),
+  OPENAI_CAREER_VIBE_PLAN_MAX_TOKENS: z.coerce.number().int().min(180).default(720),
+  OPENAI_CAREER_VIBE_PLAN_TEMPERATURE: z.coerce.number().min(0).max(1.2).default(0.45),
   OPENAI_INTERVIEW_STRATEGY_ENABLED: envBoolean.default(true),
   OPENAI_INTERVIEW_STRATEGY_MODEL: z.string().min(1).default('gpt-4o-mini'),
   OPENAI_INTERVIEW_STRATEGY_PROMPT_VERSION: z.string().min(1).default('v1'),
@@ -114,6 +120,7 @@ const envSchema = z.object({
   SCHEDULER_LOCK_BURNOUT_ALERTS_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(3 * 60),
   SCHEDULER_LOCK_LUNAR_PRODUCTIVITY_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(3 * 60),
   SCHEDULER_LOCK_INTERVIEW_STRATEGY_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(5 * 60),
+  JOB_METRICS_ENDPOINTS_ENABLED: optionalEnvBoolean,
   JOB_METRICS_ALERTS_ENABLED: envBoolean.default(true),
   JOB_METRICS_ALERT_WINDOW_HOURS: z.coerce.number().int().min(1).max(24 * 14).default(24),
   JOB_METRICS_ALERT_CHECK_INTERVAL_SECONDS: z.coerce.number().int().min(60).max(60 * 60).default(10 * 60),
@@ -143,7 +150,7 @@ const envSchema = z.object({
   INTERVIEW_STRATEGY_INITIAL_HORIZON_DAYS: z.coerce.number().int().min(7).max(90).default(30),
   INTERVIEW_STRATEGY_REFILL_THRESHOLD_DAYS: z.coerce.number().int().min(1).max(45).default(14),
   INTERVIEW_STRATEGY_REFILL_DAYS: z.coerce.number().int().min(1).max(45).default(14),
-  INTERVIEW_STRATEGY_MIN_SCORE: z.coerce.number().int().min(0).max(100).default(55),
+  INTERVIEW_STRATEGY_MIN_SCORE: z.coerce.number().int().min(0).max(100).default(68),
   INTERVIEW_STRATEGY_LLM_MAX_SLOTS: z.coerce.number().int().min(1).max(10).default(3),
   INTERVIEW_STRATEGY_LLM_MIN_GREEN_SLOTS: z.coerce.number().int().min(0).max(10).default(2),
   EXPO_PUSH_ACCESS_TOKEN: optionalNonEmptyString,
@@ -168,10 +175,9 @@ if (!parsedEnv.success) {
   throw new Error(`Invalid environment configuration: ${issues}`);
 }
 
-if (parsedEnv.data.NODE_ENV === 'production' && parsedEnv.data.BURNOUT_ALERT_FORCE_SEVERITY) {
-  throw new Error(
-    'Invalid environment configuration: BURNOUT_ALERT_FORCE_SEVERITY must not be set in production',
-  );
+const productionGuardIssues = getProductionEnvGuardIssues(parsedEnv.data);
+if (productionGuardIssues.length > 0) {
+  throw new Error(`Invalid production environment configuration: ${productionGuardIssues.join('; ')}`);
 }
 
 if (
@@ -202,6 +208,8 @@ export const env = {
     parsedEnv.data.JOB_USAGE_LIMITS_ENABLED ?? parsedEnv.data.NODE_ENV !== 'development',
   SCHEDULER_LOCKS_ENABLED:
     parsedEnv.data.SCHEDULER_LOCKS_ENABLED ?? parsedEnv.data.NODE_ENV === 'production',
+  JOB_METRICS_ENDPOINTS_ENABLED:
+    parsedEnv.data.JOB_METRICS_ENDPOINTS_ENABLED ?? parsedEnv.data.NODE_ENV !== 'production',
   EFFECTIVE_EXPO_PUSH_ACCESS_TOKEN: parsedEnv.data.EXPO_PUSH_ACCESS_TOKEN ?? parsedEnv.data.EXPO_TOKEN ?? '',
   EFFECTIVE_MONGO_URI: parsedEnv.data.MONGO_URI ?? parsedEnv.data.MONGODB_URI ?? '',
   CORS_ORIGINS_LIST: origins,

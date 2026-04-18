@@ -158,6 +158,40 @@ test("metrics and alerts reject invalid query before expensive work", async () =
   }
 });
 
+test("metrics and alerts are hidden when technical job endpoints are disabled", async () => {
+  let collectCalled = false;
+  const auth = buildFakeAuthContext();
+  const app = await buildJobsTestApp({
+    authenticateByAuthorizationHeader: async () => auth,
+    jobMetricsEndpointsEnabled: false,
+    collectJobMetrics: async () => {
+      collectCalled = true;
+      return baseMetricsReport;
+    },
+  });
+
+  try {
+    const metricsResponse = await app.inject({
+      method: "GET",
+      url: "/api/jobs/metrics",
+      headers: { authorization: "Bearer test" },
+    });
+    assert.equal(metricsResponse.statusCode, 404);
+    assert.deepEqual(metricsResponse.json(), { error: "Not found" });
+
+    const alertsResponse = await app.inject({
+      method: "GET",
+      url: "/api/jobs/alerts",
+      headers: { authorization: "Bearer test" },
+    });
+    assert.equal(alertsResponse.statusCode, 404);
+    assert.deepEqual(alertsResponse.json(), { error: "Not found" });
+    assert.equal(collectCalled, false);
+  } finally {
+    await app.close();
+  }
+});
+
 test("jobs route wiring delegates to injected handlers", async () => {
   const auth = buildFakeAuthContext();
   let preflightCalls = 0;

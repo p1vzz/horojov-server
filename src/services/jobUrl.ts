@@ -137,15 +137,19 @@ function resolveSource(host: string): SupportedJobSource | null {
 function canonicalizeLinkedIn(url: URL) {
   const pathname = normalizePathname(url.pathname);
   const idMatch = pathname.match(/\/jobs\/view\/(?:[^/]+-)?(\d+)/i);
-  if (!idMatch || !idMatch[1]) {
+  const currentJobId = url.searchParams.get('currentJobId')?.trim() ?? '';
+  const hasJobsPath = pathname === '/jobs' || pathname.startsWith('/jobs/');
+  const queryJobId = hasJobsPath && /^\d+$/.test(currentJobId) ? currentJobId : null;
+  const sourceJobId = idMatch?.[1] ?? queryJobId;
+
+  if (!sourceJobId) {
     return {
       ok: false as const,
       code: 'unsupported_path' as const,
-      message: 'LinkedIn URL must point to a concrete job posting',
+      message: 'LinkedIn URL must include a concrete job posting id',
     };
   }
 
-  const sourceJobId = idMatch[1];
   return {
     ok: true as const,
     sourceJobId,

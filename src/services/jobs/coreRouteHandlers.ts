@@ -21,6 +21,7 @@ export type JobsCoreRouteDependencies = {
   evaluateJobMetricsAlerts: (
     metrics: JobMetricsReport,
   ) => JobMetricsAlertsReport;
+  jobMetricsEndpointsEnabled?: boolean;
 };
 
 async function requireAuth(
@@ -60,6 +61,9 @@ export function createJobMetricsHandler(
   return async (request, reply) => {
     const auth = await requireAuth(request, reply, deps);
     if (!auth) return;
+    if (deps.jobMetricsEndpointsEnabled === false) {
+      return reply.code(404).send({ error: "Not found" });
+    }
 
     const parse = metricsQuerySchema.safeParse(request.query ?? {});
     if (!parse.success) {
@@ -79,6 +83,9 @@ export function createJobAlertsHandler(
   return async (request, reply) => {
     const auth = await requireAuth(request, reply, deps);
     if (!auth) return;
+    if (deps.jobMetricsEndpointsEnabled === false) {
+      return reply.code(404).send({ error: "Not found" });
+    }
 
     const parse = metricsQuerySchema.safeParse(request.query ?? {});
     if (!parse.success) {

@@ -1,6 +1,6 @@
 # Auth And Session Contract
 **Status:** Active  
-**Last synced:** 2026-03-30
+**Last synced:** 2026-04-17
 
 ## Goal
 
@@ -38,7 +38,8 @@ On success:
 
 - returns user + session context
 - user `subscriptionTier` is resolved through effective tier override:
-  - if `DEV_FORCE_PREMIUM_FOR_ALL_USERS=true`, effective tier is always `premium`
+  - outside production, `DEV_FORCE_PREMIUM_FOR_ALL_USERS=true` makes the effective tier `premium`
+  - production startup rejects `DEV_FORCE_PREMIUM_FOR_ALL_USERS=true`
 - `lastSeenAt` is touched at most once per 5 minutes.
 
 ## Endpoint Contracts

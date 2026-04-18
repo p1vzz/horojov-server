@@ -94,13 +94,13 @@ const interviewStrategySettingsSchema = z.object({
   timezoneIana: z.string().trim().min(3).max(80),
   slotDurationMinutes: z.coerce.number().int().refine((value) => value === 30 || value === 45 || value === 60, {
     message: 'slotDurationMinutes must be one of: 30, 45, 60',
-  }),
-  allowedWeekdays: z.array(z.coerce.number().int().min(0).max(6)).min(1).max(7),
-  workdayStartMinute: z.coerce.number().int().min(0).max(1439),
-  workdayEndMinute: z.coerce.number().int().min(0).max(1439),
-  quietHoursStartMinute: z.coerce.number().int().min(0).max(1439),
-  quietHoursEndMinute: z.coerce.number().int().min(0).max(1439),
-  slotsPerWeek: z.coerce.number().int().min(1).max(10),
+  }).default(60),
+  allowedWeekdays: z.array(z.coerce.number().int().min(0).max(6)).min(1).max(7).default([1, 2, 3, 4, 5]),
+  workdayStartMinute: z.coerce.number().int().min(0).max(1439).default(540),
+  workdayEndMinute: z.coerce.number().int().min(0).max(1439).default(1080),
+  quietHoursStartMinute: z.coerce.number().int().min(0).max(1439).default(1290),
+  quietHoursEndMinute: z.coerce.number().int().min(0).max(1439).default(480),
+  slotsPerWeek: z.coerce.number().int().min(1).max(10).default(5),
 });
 
 const interviewStrategyPlanQuerySchema = z.object({
@@ -631,6 +631,13 @@ export async function registerNotificationRoutes(
 
       return { settings };
     } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message.includes('Birth profile not found')) {
+        return reply.code(404).send({ error: 'Birth profile not found. Complete onboarding first.' });
+      }
+      if (message.includes('Natal chart not found')) {
+        return reply.code(404).send({ error: 'Natal chart not found. Generate natal chart first.' });
+      }
       request.log.error({ error }, 'failed to upsert interview strategy settings');
       return reply.code(502).send({ error: 'Unable to save interview strategy settings' });
     }
@@ -675,6 +682,13 @@ export async function registerNotificationRoutes(
       });
       return payload;
     } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message.includes('Birth profile not found')) {
+        return reply.code(404).send({ error: 'Birth profile not found. Complete onboarding first.' });
+      }
+      if (message.includes('Natal chart not found')) {
+        return reply.code(404).send({ error: 'Natal chart not found. Generate natal chart first.' });
+      }
       request.log.error({ error }, 'failed to fetch interview strategy plan');
       return reply.code(502).send({ error: 'Unable to build interview strategy plan' });
     }

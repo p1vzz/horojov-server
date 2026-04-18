@@ -1,6 +1,6 @@
 # LLM Gateway - Current State
 **Status:** Active  
-**Last synced:** 2026-04-01
+**Last synced:** 2026-04-13
 
 ## Goal
 
@@ -33,6 +33,7 @@ Document the current shared transport layer for OpenAI-backed structured outputs
   - interview strategy explanations
   - full natal analysis
   - AI synergy narrative
+  - Career Vibe plan narrative
 
 ## Services Migrated
 
@@ -41,6 +42,7 @@ Document the current shared transport layer for OpenAI-backed structured outputs
 - `src/services/interviewStrategy.ts`
 - `src/services/fullNatalAnalysis.ts`
 - `src/services/aiSynergy.ts`
+- `src/services/careerVibePlan.ts`
 
 ## Current Boundary
 
@@ -83,6 +85,7 @@ Current prompt registry entries:
 - interview strategy
 - full natal analysis
 - AI synergy
+- Career Vibe plan
 
 ## Not Implemented Yet
 

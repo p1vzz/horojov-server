@@ -9,7 +9,7 @@ import {
   type InterviewStrategySlotDoc,
   type InterviewStrategySlotSource,
 } from '../db/mongo.js';
-import { buildTodayDate, getOrCreateDailyTransitForUser } from './dailyTransit.js';
+import { getOrCreateDailyTransitForUser } from './dailyTransit.js';
 import { openAiStructuredGateway } from './llmGateway.js';
 import { getInterviewStrategyPromptConfig } from './llmPromptRegistry.js';
 
@@ -43,6 +43,7 @@ export type InterviewStrategySlotView = {
   timezoneIana: string;
   score: number;
   explanation: string;
+  calendarNote: string;
   breakdown: InterviewStrategyScoreBreakdownView;
 };
 
@@ -88,6 +89,40 @@ const DEFAULT_SETTINGS = {
 
 const INTERVIEW_STRATEGY_GOLD_SCORE = 80;
 const INTERVIEW_STRATEGY_GREEN_SCORE = 90;
+const INTERVIEW_STRATEGY_MONTHLY_SLOT_TARGET = 5;
+const INTERVIEW_STRATEGY_MONTHLY_SLOT_SPACING_DAYS = 3;
+const INTERVIEW_STRATEGY_DEFAULT_RANGE_START_MINUTE = 9 * 60;
+const INTERVIEW_STRATEGY_DEFAULT_RANGE_END_MINUTE = 18 * 60;
+const INTERVIEW_STRATEGY_FIXED_ALLOWED_WEEKDAYS = [1, 2, 3, 4, 5];
+const INTERVIEW_STRATEGY_MIN_WINDOW_MINUTES = 60;
+const INTERVIEW_STRATEGY_MAX_WINDOW_MINUTES = 180;
+
+const SIGN_START_DEGREES: Record<string, number> = {
+  aries: 0,
+  taurus: 30,
+  gemini: 60,
+  cancer: 90,
+  leo: 120,
+  virgo: 150,
+  libra: 180,
+  scorpio: 210,
+  sagittarius: 240,
+  capricorn: 270,
+  aquarius: 300,
+  pisces: 330,
+};
+
+const INTERVIEW_HOUSE_PEAK_HOURS: Record<number, number> = {
+  1: 10,
+  2: 11,
+  3: 10,
+  5: 11,
+  6: 9,
+  7: 14,
+  9: 13,
+  10: 11,
+  11: 15,
+};
 
 const GOLD_SLOT_FALLBACK_VARIANTS = [
   'Planetary currents are quietly supportive, making this window ideal for clear answers and steady confidence.',
@@ -134,7 +169,7 @@ const INTERVIEW_STRATEGY_LLM_SCHEMA = {
   },
 } as const;
 
-type GeneratedInterviewSlot = {
+export type GeneratedInterviewSlot = {
   slotId: string;
   dateKey: string;
   startAt: Date;
@@ -142,7 +177,36 @@ type GeneratedInterviewSlot = {
   timezoneIana: string;
   score: number;
   explanation: string;
+  calendarNote: string;
   breakdown: InterviewStrategyScoreBreakdownDoc;
+};
+
+type InterviewStrategySelectedSlot = GeneratedInterviewSlot;
+
+type ChartPlacementSnapshot = {
+  planet: string;
+  sign: string | null;
+  house: number | null;
+  longitude: number | null;
+};
+
+type ChartSnapshot = {
+  placements: ChartPlacementSnapshot[];
+  houseSigns: Map<number, string>;
+};
+
+type TransitNatalSignal = {
+  natalCommunicationScore: number;
+  transitNatalScore: number;
+  careerHouseScore: number;
+  bestAspectLabel: string | null;
+  pressureLabel: string | null;
+};
+
+type InterviewWindowTiming = {
+  startMinute: number;
+  durationMinutes: number;
+  rangeQualityScore: number;
 };
 
 type InterviewStrategyTransitPromptContext = {
@@ -215,6 +279,228 @@ function pickBySeed(items: readonly string[], seed: string) {
   const index = Math.floor(seededUnit(seed) * items.length);
   const normalizedIndex = clamp(index, 0, items.length - 1);
   return items[normalizedIndex] ?? items[0] ?? '';
+}
+
+function normalizeToken(value: unknown) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function normalizePlanet(value: unknown) {
+  const normalized = normalizeToken(value);
+  if (!normalized) return null;
+  if (normalized.startsWith('sun')) return 'sun';
+  if (normalized.startsWith('moon')) return 'moon';
+  if (normalized.startsWith('merc')) return 'mercury';
+  if (normalized.startsWith('ven')) return 'venus';
+  if (normalized.startsWith('mar')) return 'mars';
+  if (normalized.startsWith('jup')) return 'jupiter';
+  if (normalized.startsWith('sat')) return 'saturn';
+  if (normalized.startsWith('ura')) return 'uranus';
+  if (normalized.startsWith('nep')) return 'neptune';
+  if (normalized.startsWith('plu')) return 'pluto';
+  return null;
+}
+
+function normalizeSign(value: unknown) {
+  const normalized = normalizeToken(value);
+  if (!normalized) return null;
+  if (normalized.startsWith('ari')) return 'aries';
+  if (normalized.startsWith('tau')) return 'taurus';
+  if (normalized.startsWith('gem')) return 'gemini';
+  if (normalized.startsWith('can')) return 'cancer';
+  if (normalized.startsWith('leo')) return 'leo';
+  if (normalized.startsWith('vir')) return 'virgo';
+  if (normalized.startsWith('lib')) return 'libra';
+  if (normalized.startsWith('sco')) return 'scorpio';
+  if (normalized.startsWith('sag')) return 'sagittarius';
+  if (normalized.startsWith('cap')) return 'capricorn';
+  if (normalized.startsWith('aqu')) return 'aquarius';
+  if (normalized.startsWith('pis')) return 'pisces';
+  return null;
+}
+
+function normalizeLongitude(fullDegree: unknown, sign: string | null) {
+  if (typeof fullDegree !== 'number' || !Number.isFinite(fullDegree)) return null;
+  const normalized = ((fullDegree % 360) + 360) % 360;
+  if (normalized <= 30 && sign) {
+    const signStart = SIGN_START_DEGREES[sign];
+    return typeof signStart === 'number' ? (signStart + normalized) % 360 : normalized;
+  }
+  return normalized;
+}
+
+function extractChartSnapshot(chart: unknown): ChartSnapshot {
+  if (!chart || typeof chart !== 'object' || Array.isArray(chart)) {
+    return { placements: [], houseSigns: new Map() };
+  }
+
+  const root = chart as Record<string, unknown>;
+  const housesRaw = Array.isArray(root.houses) ? root.houses : [];
+  const houseSigns = new Map<number, string>();
+  const placements: ChartPlacementSnapshot[] = [];
+
+  for (const houseEntry of housesRaw) {
+    if (!houseEntry || typeof houseEntry !== 'object' || Array.isArray(houseEntry)) continue;
+    const house = houseEntry as Record<string, unknown>;
+    const houseIdRaw = house.house_id;
+    const houseId = typeof houseIdRaw === 'number' && Number.isFinite(houseIdRaw) ? Math.round(houseIdRaw) : null;
+    if (houseId === null || houseId < 1 || houseId > 12) continue;
+
+    const houseSign = normalizeSign(house.sign);
+    if (houseSign) houseSigns.set(houseId, houseSign);
+
+    const planets = Array.isArray(house.planets) ? house.planets : [];
+    for (const planetEntry of planets) {
+      if (!planetEntry || typeof planetEntry !== 'object' || Array.isArray(planetEntry)) continue;
+      const planetObject = planetEntry as Record<string, unknown>;
+      const planet = normalizePlanet(planetObject.name);
+      if (!planet) continue;
+      const sign = normalizeSign(planetObject.sign);
+      placements.push({
+        planet,
+        sign,
+        house: houseId,
+        longitude: normalizeLongitude(planetObject.full_degree, sign),
+      });
+    }
+  }
+
+  return { placements, houseSigns };
+}
+
+function angularDistance(left: number, right: number) {
+  const diff = Math.abs(left - right) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+function findMajorAspect(left: number | null, right: number | null) {
+  if (left === null || right === null) return null;
+  const distance = angularDistance(left, right);
+  const aspects = [
+    { label: 'conjunction', angle: 0, maxOrb: 7, quality: 'supportive' as const },
+    { label: 'sextile', angle: 60, maxOrb: 5, quality: 'supportive' as const },
+    { label: 'square', angle: 90, maxOrb: 6, quality: 'hard' as const },
+    { label: 'trine', angle: 120, maxOrb: 7, quality: 'supportive' as const },
+    { label: 'opposition', angle: 180, maxOrb: 7, quality: 'hard' as const },
+  ];
+
+  let best: (typeof aspects)[number] & { orb: number; strength: number } | null = null;
+  for (const aspect of aspects) {
+    const orb = Math.abs(distance - aspect.angle);
+    if (orb > aspect.maxOrb) continue;
+    const strength = clamp(1 - orb / aspect.maxOrb, 0.12, 1);
+    if (!best || strength > best.strength) {
+      best = { ...aspect, orb, strength };
+    }
+  }
+  return best;
+}
+
+function planetLabel(planet: string) {
+  return planet.charAt(0).toUpperCase() + planet.slice(1);
+}
+
+function transitPlanetWeight(planet: string) {
+  const weights: Record<string, number> = {
+    mercury: 1.26,
+    venus: 1.12,
+    jupiter: 1.08,
+    sun: 1,
+    moon: 0.82,
+    mars: 0.66,
+    saturn: 0.72,
+  };
+  return weights[planet] ?? 0.55;
+}
+
+function natalPlanetWeight(planet: string) {
+  const weights: Record<string, number> = {
+    mercury: 1.28,
+    sun: 1.12,
+    venus: 1,
+    moon: 0.92,
+    jupiter: 0.88,
+    saturn: 0.72,
+  };
+  return weights[planet] ?? 0.58;
+}
+
+function computeNatalCommunicationBias(natal: ChartSnapshot) {
+  let score = 48;
+  for (const placement of natal.placements) {
+    if (placement.planet === 'mercury') score += 7;
+    if (placement.planet === 'venus') score += 4;
+    if (placement.planet === 'jupiter') score += 3;
+    if (placement.planet === 'sun') score += 2;
+    if (placement.house === 3) score += 6;
+    if (placement.house === 7) score += 4;
+    if (placement.house === 10) score += 5;
+    if (placement.house === 11) score += 3;
+  }
+  return clamp(Math.round(score), 30, 96);
+}
+
+function scoreCareerHouseEmphasis(natal: ChartSnapshot, transit: ChartSnapshot, dominantHouse: number) {
+  const careerHouses = new Set([3, 6, 7, 10, 11]);
+  let score = 46;
+  if (careerHouses.has(dominantHouse)) score += dominantHouse === 10 ? 16 : 10;
+  for (const placement of transit.placements) {
+    if (placement.house && careerHouses.has(placement.house)) {
+      score += placement.house === 10 ? 4 : 2.4;
+    }
+  }
+  for (const placement of natal.placements) {
+    if (placement.house === 10 && (placement.planet === 'sun' || placement.planet === 'mercury' || placement.planet === 'saturn')) {
+      score += 3;
+    }
+  }
+  return clamp(Math.round(score), 28, 96);
+}
+
+function resolveTransitNatalSignal(input: {
+  natalChart: unknown;
+  transitChart: unknown;
+  dominantHouse: number;
+}): TransitNatalSignal {
+  const natal = extractChartSnapshot(input.natalChart);
+  const transit = extractChartSnapshot(input.transitChart);
+  const natalCommunicationBias = computeNatalCommunicationBias(natal);
+  const careerHouseScore = scoreCareerHouseEmphasis(natal, transit, input.dominantHouse);
+  let supportive = 0;
+  let pressure = 0;
+  let bestSupport: { score: number; label: string } | null = null;
+  let strongestPressure: { score: number; label: string } | null = null;
+
+  for (const transitPlacement of transit.placements) {
+    for (const natalPlacement of natal.placements) {
+      const aspect = findMajorAspect(transitPlacement.longitude, natalPlacement.longitude);
+      if (!aspect) continue;
+      const weight = transitPlanetWeight(transitPlacement.planet) * natalPlanetWeight(natalPlacement.planet) * aspect.strength;
+      const label = `${planetLabel(transitPlacement.planet)} ${aspect.label} natal ${planetLabel(natalPlacement.planet)}`;
+      if (aspect.quality === 'supportive') {
+        supportive += weight;
+        if (!bestSupport || weight > bestSupport.score) bestSupport = { score: weight, label };
+      } else {
+        pressure += weight;
+        if (!strongestPressure || weight > strongestPressure.score) strongestPressure = { score: weight, label };
+      }
+    }
+  }
+
+  const transitNatalScore = clamp(Math.round(52 + supportive * 8.8 - pressure * 6.4), 18, 99);
+  const natalCommunicationScore = clamp(
+    Math.round(natalCommunicationBias * 0.48 + transitNatalScore * 0.34 + careerHouseScore * 0.18),
+    20,
+    99
+  );
+
+  return {
+    natalCommunicationScore,
+    transitNatalScore,
+    careerHouseScore,
+    bestAspectLabel: bestSupport?.label ?? null,
+    pressureLabel: strongestPressure?.label ?? null,
+  };
 }
 
 function localDateKey(parts: LocalDateParts) {
@@ -328,28 +614,18 @@ function normalizeSettingsInput(input: {
   quietHoursEndMinute: number;
   slotsPerWeek: number;
 }) {
-  const slotDurationMinutes = normalizeSlotDuration(input.slotDurationMinutes);
-  const allowedWeekdays = normalizeWeekdays(input.allowedWeekdays);
-  const workdayStartMinute = clamp(Math.trunc(input.workdayStartMinute), 0, 1439);
-  let workdayEndMinute = clamp(Math.trunc(input.workdayEndMinute), 0, 1439);
-  if (workdayEndMinute <= workdayStartMinute + slotDurationMinutes) {
-    workdayEndMinute = clamp(workdayStartMinute + slotDurationMinutes + 60, slotDurationMinutes, 1439);
-  }
-  const quietHoursStartMinute = clamp(Math.trunc(input.quietHoursStartMinute), 0, 1439);
-  const quietHoursEndMinute = clamp(Math.trunc(input.quietHoursEndMinute), 0, 1439);
-  const slotsPerWeek = clamp(Math.trunc(input.slotsPerWeek), 1, 10);
   const timezoneIana = input.timezoneIana.trim();
 
   return {
     enabled: Boolean(input.enabled),
     timezoneIana: timezoneIana.length > 0 ? timezoneIana : DEFAULT_SETTINGS.timezoneIana,
-    slotDurationMinutes,
-    allowedWeekdays,
-    workdayStartMinute,
-    workdayEndMinute,
-    quietHoursStartMinute,
-    quietHoursEndMinute,
-    slotsPerWeek,
+    slotDurationMinutes: normalizeSlotDuration(DEFAULT_SETTINGS.slotDurationMinutes),
+    allowedWeekdays: normalizeWeekdays(INTERVIEW_STRATEGY_FIXED_ALLOWED_WEEKDAYS),
+    workdayStartMinute: INTERVIEW_STRATEGY_DEFAULT_RANGE_START_MINUTE,
+    workdayEndMinute: INTERVIEW_STRATEGY_DEFAULT_RANGE_END_MINUTE,
+    quietHoursStartMinute: DEFAULT_SETTINGS.quietHoursStartMinute,
+    quietHoursEndMinute: DEFAULT_SETTINGS.quietHoursEndMinute,
+    slotsPerWeek: clamp(Math.trunc(DEFAULT_SETTINGS.slotsPerWeek), 1, 10),
   };
 }
 
@@ -435,27 +711,6 @@ function getHourWeight(hour: number) {
   }
 }
 
-function rangesOverlap(startA: number, endA: number, startB: number, endB: number) {
-  return startA < endB && endA > startB;
-}
-
-function slotTouchesQuietHours(slotStartMinute: number, slotEndMinute: number, settings: InterviewStrategySettingsDoc) {
-  if (settings.quietHoursStartMinute === settings.quietHoursEndMinute) return false;
-  if (settings.quietHoursStartMinute < settings.quietHoursEndMinute) {
-    return rangesOverlap(
-      slotStartMinute,
-      slotEndMinute,
-      settings.quietHoursStartMinute,
-      settings.quietHoursEndMinute
-    );
-  }
-
-  return (
-    rangesOverlap(slotStartMinute, slotEndMinute, settings.quietHoursStartMinute, 1440) ||
-    rangesOverlap(slotStartMinute, slotEndMinute, 0, settings.quietHoursEndMinute)
-  );
-}
-
 function getMondayWeekKeyForDateKey(dateKey: string) {
   const parsed = parseDateKey(dateKey);
   if (!parsed) return dateKey;
@@ -505,13 +760,30 @@ function buildGoldFallbackExplanation(input: {
   );
 }
 
+function truncateSentence(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}.`;
+}
+
 function buildSlotExplanation(input: {
   userId: ObjectId;
   dateKey: string;
   slotId: string;
   score: number;
   breakdown: InterviewStrategyScoreBreakdownDoc;
+  signal?: TransitNatalSignal;
 }) {
+  if (input.signal?.bestAspectLabel) {
+    const pressureClause = input.signal.pressureLabel
+      ? ` Keep answers concise because ${input.signal.pressureLabel.toLowerCase()} adds pressure.`
+      : '';
+    return truncateSentence(
+      `${input.signal.bestAspectLabel} supports clear interview presence while career-house emphasis is ${input.breakdown.careerHouseScore ?? input.signal.careerHouseScore}%.${pressureClause}`,
+      240
+    );
+  }
+
   if (input.score >= INTERVIEW_STRATEGY_GOLD_SCORE) {
     return buildGoldFallbackExplanation({
       userId: input.userId,
@@ -526,6 +798,16 @@ function buildSlotExplanation(input: {
     weekdayWeight: input.breakdown.weekdayWeight,
     hourWeight: input.breakdown.hourWeight,
   });
+}
+
+function buildCalendarNote(input: {
+  explanation: string;
+  signal: TransitNatalSignal;
+  score: number;
+}) {
+  const driver = input.signal.bestAspectLabel ?? 'Natal-transit timing';
+  const pressure = input.signal.pressureLabel ? ` Watch ${input.signal.pressureLabel.toLowerCase()}.` : '';
+  return truncateSentence(`${driver}: ${input.score}% interview window. ${input.explanation}${pressure}`, 220);
 }
 
 export function normalizeInterviewStrategyExplanationFromLlm(raw: unknown) {
@@ -760,23 +1042,129 @@ async function maybeEnhanceSlotExplanationsWithLlm(input: {
   return enhanced;
 }
 
-async function resolveBaselineScores(userId: ObjectId, logger: FastifyBaseLogger) {
-  try {
-    const transit = await getOrCreateDailyTransitForUser(userId, buildTodayDate(), logger);
-    const dailyCareerScore = Math.round(
-      (transit.doc.vibe.metrics.energy + transit.doc.vibe.metrics.focus + transit.doc.vibe.metrics.luck) / 3
-    );
-    const aiSynergyScore = transit.aiSynergy?.score ?? 60;
-    return {
-      dailyCareerScore: clamp(dailyCareerScore, 0, 100),
-      aiSynergyScore: clamp(Math.round(aiSynergyScore), 0, 100),
-    };
-  } catch {
-    return {
-      dailyCareerScore: 67,
-      aiSynergyScore: 63,
-    };
+async function loadNatalChartForActiveProfile(input: {
+  userId: ObjectId;
+  collections: Awaited<ReturnType<typeof getCollections>>;
+}) {
+  const profile = await input.collections.birthProfiles.findOne(
+    { userId: input.userId },
+    { projection: { profileHash: 1 } }
+  );
+  if (!profile) {
+    throw new Error('Birth profile not found');
   }
+
+  const natalChart = await input.collections.natalCharts.findOne(
+    {
+      userId: input.userId,
+      profileHash: profile.profileHash,
+    },
+    { projection: { chart: 1, profileHash: 1 } }
+  );
+  if (!natalChart) {
+    throw new Error('Natal chart not found');
+  }
+
+  return {
+    profileHash: profile.profileHash,
+    chart: natalChart.chart,
+  };
+}
+
+export function resolveInterviewStrategySlotTarget(rangeDays: number) {
+  const normalizedDays = Number.isFinite(rangeDays) ? Math.max(1, Math.trunc(rangeDays)) : 30;
+  return clamp(Math.round((normalizedDays / 30) * INTERVIEW_STRATEGY_MONTHLY_SLOT_TARGET), 1, INTERVIEW_STRATEGY_MONTHLY_SLOT_TARGET);
+}
+
+function selectedSlotsAreTooClose(left: GeneratedInterviewSlot, right: GeneratedInterviewSlot) {
+  const diff = Math.abs(daysBetweenDateKeys(left.dateKey, right.dateKey));
+  return diff < INTERVIEW_STRATEGY_MONTHLY_SLOT_SPACING_DAYS;
+}
+
+export function selectInterviewStrategySlotsForRange(input: {
+  candidates: GeneratedInterviewSlot[];
+  rangeDays: number;
+  minScore: number;
+}): InterviewStrategySelectedSlot[] {
+  const target = resolveInterviewStrategySlotTarget(input.rangeDays);
+  const sorted = [...input.candidates].sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    return left.startAt.getTime() - right.startAt.getTime();
+  });
+  const qualified = sorted.filter((slot) => slot.score >= input.minScore);
+  const pool = qualified;
+  const selected: GeneratedInterviewSlot[] = [];
+  const selectedDateKeys = new Set<string>();
+
+  for (const slot of pool) {
+    if (selected.length >= target) break;
+    if (selectedDateKeys.has(slot.dateKey)) continue;
+    if (selected.some((existing) => selectedSlotsAreTooClose(existing, slot))) continue;
+    selected.push(slot);
+    selectedDateKeys.add(slot.dateKey);
+  }
+
+  for (const slot of pool) {
+    if (selected.length >= target) break;
+    if (selectedDateKeys.has(slot.dateKey)) continue;
+    selected.push(slot);
+    selectedDateKeys.add(slot.dateKey);
+  }
+
+  return selected.sort((left, right) => left.startAt.getTime() - right.startAt.getTime());
+}
+
+function resolvePreferredInterviewHour(input: {
+  dominantPlanet: string;
+  dominantHouse: number;
+  signal: TransitNatalSignal;
+}) {
+  const normalizedPlanet = normalizePlanet(input.dominantPlanet);
+  let hour = INTERVIEW_HOUSE_PEAK_HOURS[input.dominantHouse] ?? 11;
+  if (normalizedPlanet === 'mercury') hour -= 0.5;
+  if (normalizedPlanet === 'venus' || normalizedPlanet === 'jupiter') hour += 1;
+  if (input.signal.natalCommunicationScore >= 82) hour -= 0.5;
+  if (input.signal.careerHouseScore >= 82) hour += 0.5;
+  return clamp(hour, 9, 15);
+}
+
+function resolveRangeQualityScore(minute: number, preferredHour: number) {
+  const hour = minute / 60;
+  return clamp(Math.round(96 - Math.abs(hour - preferredHour) * 13), 45, 96);
+}
+
+function resolveWindowDurationMinutes(score: number, signal: TransitNatalSignal) {
+  if (score >= 86 && signal.transitNatalScore >= 84) return INTERVIEW_STRATEGY_MAX_WINDOW_MINUTES;
+  if (score >= 78) return 120;
+  if (score >= 70) return 90;
+  return INTERVIEW_STRATEGY_MIN_WINDOW_MINUTES;
+}
+
+function resolveInterviewWindowTiming(input: {
+  dominantPlanet: string;
+  dominantHouse: number;
+  signal: TransitNatalSignal;
+  score: number;
+}): InterviewWindowTiming {
+  const preferredHour = resolvePreferredInterviewHour(input);
+  const durationMinutes = resolveWindowDurationMinutes(input.score, input.signal);
+  const latestStart = INTERVIEW_STRATEGY_DEFAULT_RANGE_END_MINUTE - durationMinutes;
+  let bestMinute = INTERVIEW_STRATEGY_DEFAULT_RANGE_START_MINUTE;
+  let bestQuality = Number.NEGATIVE_INFINITY;
+
+  for (let minute = INTERVIEW_STRATEGY_DEFAULT_RANGE_START_MINUTE; minute <= latestStart; minute += 30) {
+    const quality = resolveRangeQualityScore(minute, preferredHour);
+    if (quality > bestQuality) {
+      bestMinute = minute;
+      bestQuality = quality;
+    }
+  }
+
+  return {
+    startMinute: bestMinute,
+    durationMinutes,
+    rangeQualityScore: bestQuality,
+  };
 }
 
 function toSlotView(doc: InterviewStrategySlotDoc): InterviewStrategySlotView {
@@ -788,6 +1176,7 @@ function toSlotView(doc: InterviewStrategySlotDoc): InterviewStrategySlotView {
     timezoneIana: doc.timezoneIana,
     score: doc.score,
     explanation: doc.explanation,
+    calendarNote: doc.calendarNote ?? doc.explanation,
     breakdown: doc.breakdown,
   };
 }
@@ -903,145 +1292,199 @@ async function generateSlotsForRange(input: {
     throw new Error('Invalid date range for interview strategy generation');
   }
 
-  const baseline = await resolveBaselineScores(input.userId, input.logger);
+  const natal = await loadNatalChartForActiveProfile({
+    userId: input.userId,
+    collections,
+  });
   let generated = 0;
   let updated = 0;
   let skipped = 0;
-  const generatedSlots: GeneratedInterviewSlot[] = [];
+  const candidateSlots: GeneratedInterviewSlot[] = [];
+  const rangeDays = daysBetweenDateKeys(input.fromDateKey, input.untilDateKey) + 1;
 
   let cursor = { ...fromParts };
   while (daysBetweenDateKeys(localDateKey(cursor), localDateKey(untilParts)) >= 0) {
     const dateKey = localDateKey(cursor);
     const utcDate = new Date(Date.UTC(cursor.year, cursor.month - 1, cursor.day));
     const weekday = utcDate.getUTCDay();
-    if (!input.settings.allowedWeekdays.includes(weekday)) {
+    if (!INTERVIEW_STRATEGY_FIXED_ALLOWED_WEEKDAYS.includes(weekday)) {
       cursor = shiftLocalDay(cursor, 1);
       continue;
     }
 
-    const dailyCareerScore = clamp(
-      Math.round(baseline.dailyCareerScore + (seededUnit(`${input.userId.toHexString()}:${dateKey}:daily-career`) - 0.5) * 24),
-      0,
-      100
-    );
-    const aiSynergyScore = clamp(
-      Math.round(baseline.aiSynergyScore + (seededUnit(`${input.userId.toHexString()}:${dateKey}:ai-synergy`) - 0.5) * 18),
-      0,
-      100
-    );
-    const weekdayWeight = getWeekdayWeight(weekday);
-
-    for (
-      let minute = input.settings.workdayStartMinute;
-      minute + input.settings.slotDurationMinutes <= input.settings.workdayEndMinute;
-      minute += 30
-    ) {
-      const endMinute = minute + input.settings.slotDurationMinutes;
-      if (slotTouchesQuietHours(minute, endMinute, input.settings)) {
-        continue;
-      }
-
-      const hourWeight = getHourWeight(Math.floor(minute / 60));
-      const conflictPenalty = 0;
-      const scoreRaw = 0.4 * dailyCareerScore + 0.25 * aiSynergyScore + 0.2 * weekdayWeight + 0.15 * hourWeight;
-      const score = clamp(Math.round(scoreRaw - conflictPenalty), 0, 100);
-      if (score < env.INTERVIEW_STRATEGY_MIN_SCORE) {
-        skipped += 1;
-        continue;
-      }
-
-      const slotId = `${dateKey}:${String(minute).padStart(4, '0')}:${input.settings.slotDurationMinutes}`;
-      const weekKey = getMondayWeekKeyForDateKey(dateKey);
-      const startAt = localDateTimeToUtc(
-        {
-          year: cursor.year,
-          month: cursor.month,
-          day: cursor.day,
-          hour: Math.floor(minute / 60),
-          minute: minute % 60,
-          second: 0,
-        },
-        input.settings.timezoneIana
-      );
-      const endAt = localDateTimeToUtc(
-        {
-          year: cursor.year,
-          month: cursor.month,
-          day: cursor.day,
-          hour: Math.floor(endMinute / 60),
-          minute: endMinute % 60,
-          second: 0,
-        },
-        input.settings.timezoneIana
-      );
-      if (endAt.getTime() <= startAt.getTime()) {
-        skipped += 1;
-        continue;
-      }
-
-      const breakdown: InterviewStrategyScoreBreakdownDoc = {
-        dailyCareerScore,
-        aiSynergyScore,
-        weekdayWeight,
-        hourWeight,
-        conflictPenalty,
-      };
-      const explanation = buildSlotExplanation({
-        userId: input.userId,
-        dateKey,
-        slotId,
-        score,
-        breakdown,
-      });
-
-      const updateResult = await collections.interviewStrategySlots.updateOne(
-        {
-          userId: input.userId,
-          slotId,
-        },
-        {
-          $set: {
-            dateKey,
-            weekKey,
-            startAt,
-            endAt,
-            timezoneIana: input.settings.timezoneIana,
-            score,
-            explanation,
-            breakdown,
-            algorithmVersion: INTERVIEW_STRATEGY_ALGORITHM_VERSION,
-            source: input.source,
-            updatedAt: now,
-          },
-          $setOnInsert: {
-            _id: new ObjectId(),
-            createdAt: now,
-          },
-        },
-        { upsert: true }
-      );
-
-      if (updateResult.upsertedCount > 0) {
-        generated += 1;
-      } else if (updateResult.modifiedCount > 0) {
-        updated += 1;
-      } else {
-        skipped += 1;
-      }
-
-      generatedSlots.push({
-        slotId,
-        dateKey,
-        startAt,
-        endAt,
-        timezoneIana: input.settings.timezoneIana,
-        score,
-        explanation,
-        breakdown,
-      });
+    const transitDate = dateFromDateKeyAtNoon(dateKey);
+    if (!transitDate) {
+      skipped += 1;
+      cursor = shiftLocalDay(cursor, 1);
+      continue;
     }
 
+    const transit = await getOrCreateDailyTransitForUser(input.userId, transitDate, input.logger);
+    if (transit.doc.profileHash !== natal.profileHash) {
+      skipped += 1;
+      cursor = shiftLocalDay(cursor, 1);
+      continue;
+    }
+
+    const signal = resolveTransitNatalSignal({
+      natalChart: natal.chart,
+      transitChart: transit.doc.chart,
+      dominantHouse: transit.doc.vibe.dominant.house,
+    });
+    const dailyCareerScore = clamp(
+      Math.round((transit.doc.vibe.metrics.energy + transit.doc.vibe.metrics.focus + transit.doc.vibe.metrics.luck) / 3),
+      0,
+      100
+    );
+    const aiSynergyScore = clamp(Math.round(transit.aiSynergy?.score ?? 60), 0, 100);
+    const weekdayWeight = getWeekdayWeight(weekday);
+    const preliminaryRangeQuality = resolveRangeQualityScore(
+      INTERVIEW_STRATEGY_DEFAULT_RANGE_START_MINUTE,
+      resolvePreferredInterviewHour({
+        dominantPlanet: transit.doc.vibe.dominant.planet,
+        dominantHouse: transit.doc.vibe.dominant.house,
+        signal,
+      })
+    );
+    const preliminaryScoreRaw =
+      0.34 * signal.transitNatalScore +
+      0.22 * signal.natalCommunicationScore +
+      0.18 * dailyCareerScore +
+      0.12 * aiSynergyScore +
+      0.08 * signal.careerHouseScore +
+      0.04 * weekdayWeight +
+      0.02 * preliminaryRangeQuality;
+    const preliminaryScore = clamp(Math.round(preliminaryScoreRaw), 0, 100);
+    const timing = resolveInterviewWindowTiming({
+      dominantPlanet: transit.doc.vibe.dominant.planet,
+      dominantHouse: transit.doc.vibe.dominant.house,
+      signal,
+      score: preliminaryScore,
+    });
+    const hourWeight = getHourWeight(Math.floor(timing.startMinute / 60));
+    const conflictPenalty = 0;
+    const scoreRaw =
+      0.34 * signal.transitNatalScore +
+      0.22 * signal.natalCommunicationScore +
+      0.18 * dailyCareerScore +
+      0.12 * aiSynergyScore +
+      0.08 * signal.careerHouseScore +
+      0.04 * weekdayWeight +
+      0.02 * timing.rangeQualityScore;
+    const score = clamp(Math.round(scoreRaw - conflictPenalty), 0, 100);
+    const endMinute = timing.startMinute + timing.durationMinutes;
+    const slotId = `${dateKey}:${String(timing.startMinute).padStart(4, '0')}:${timing.durationMinutes}`;
+    const startAt = localDateTimeToUtc(
+      {
+        year: cursor.year,
+        month: cursor.month,
+        day: cursor.day,
+        hour: Math.floor(timing.startMinute / 60),
+        minute: timing.startMinute % 60,
+        second: 0,
+      },
+      input.settings.timezoneIana
+    );
+    const endAt = localDateTimeToUtc(
+      {
+        year: cursor.year,
+        month: cursor.month,
+        day: cursor.day,
+        hour: Math.floor(endMinute / 60),
+        minute: endMinute % 60,
+        second: 0,
+      },
+      input.settings.timezoneIana
+    );
+    if (endAt.getTime() <= startAt.getTime()) {
+      skipped += 1;
+      cursor = shiftLocalDay(cursor, 1);
+      continue;
+    }
+
+    const breakdown: InterviewStrategyScoreBreakdownDoc = {
+      dailyCareerScore,
+      aiSynergyScore,
+      weekdayWeight,
+      hourWeight,
+      conflictPenalty,
+      natalCommunicationScore: signal.natalCommunicationScore,
+      transitNatalScore: signal.transitNatalScore,
+      careerHouseScore: signal.careerHouseScore,
+      rangeQualityScore: timing.rangeQualityScore,
+    };
+    const explanation = buildSlotExplanation({
+      userId: input.userId,
+      dateKey,
+      slotId,
+      score,
+      breakdown,
+      signal,
+    });
+    const calendarNote = buildCalendarNote({
+      explanation,
+      signal,
+      score,
+    });
+
+    candidateSlots.push({
+      slotId,
+      dateKey,
+      startAt,
+      endAt,
+      timezoneIana: input.settings.timezoneIana,
+      score,
+      explanation,
+      calendarNote,
+      breakdown,
+    });
+
     cursor = shiftLocalDay(cursor, 1);
+  }
+
+  const generatedSlots = selectInterviewStrategySlotsForRange({
+    candidates: candidateSlots,
+    rangeDays,
+    minScore: env.INTERVIEW_STRATEGY_MIN_SCORE,
+  });
+  skipped += Math.max(0, candidateSlots.length - generatedSlots.length);
+
+  for (const slot of generatedSlots) {
+    const updateResult = await collections.interviewStrategySlots.updateOne(
+      {
+        userId: input.userId,
+        slotId: slot.slotId,
+      },
+      {
+        $set: {
+          dateKey: slot.dateKey,
+          weekKey: getMondayWeekKeyForDateKey(slot.dateKey),
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          timezoneIana: slot.timezoneIana,
+          score: slot.score,
+          explanation: slot.explanation,
+          calendarNote: slot.calendarNote,
+          breakdown: slot.breakdown,
+          algorithmVersion: INTERVIEW_STRATEGY_ALGORITHM_VERSION,
+          source: input.source,
+          updatedAt: now,
+        },
+        $setOnInsert: {
+          _id: new ObjectId(),
+          createdAt: now,
+        },
+      },
+      { upsert: true }
+    );
+
+    if (updateResult.upsertedCount > 0) {
+      generated += 1;
+    } else if (updateResult.modifiedCount > 0) {
+      updated += 1;
+    } else {
+      skipped += 1;
+    }
   }
 
   const llmEnhancedCount = await maybeEnhanceSlotExplanationsWithLlm({

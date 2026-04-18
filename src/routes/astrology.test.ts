@@ -7,6 +7,7 @@ import {
   registerAstrologyRoutes,
   type AstrologyRouteDependencies,
 } from './astrology.js';
+import { discoverRolesQuerySchema } from '../services/astrology/astrologyShared.js';
 
 function buildFakeAuthContext(
   subscriptionTier: "free" | "premium",
@@ -61,6 +62,7 @@ test("astrology routes return 401 for unauthenticated requests", async () => {
       { method: "GET", url: "/api/astrology/birth-profile" },
       { method: "PUT", url: "/api/astrology/birth-profile", payload: {} },
       { method: "GET", url: "/api/astrology/daily-transit" },
+      { method: "GET", url: "/api/astrology/career-vibe-plan" },
       { method: "GET", url: "/api/astrology/morning-briefing" },
       { method: "GET", url: "/api/astrology/full-natal-analysis" },
       { method: "POST", url: "/api/astrology/full-natal-analysis/regenerate" },
@@ -162,4 +164,24 @@ test("query and body validation fails before heavy astrology dependencies", asyn
   } finally {
     await app.close();
   }
+});
+
+test("discover roles query parses explicit false booleans as false", () => {
+  const parsed = discoverRolesQuerySchema.parse({
+    refresh: "false",
+    deferSearchScores: "false",
+  });
+
+  assert.equal(parsed.refresh, false);
+  assert.equal(parsed.deferSearchScores, false);
+
+  const deferred = discoverRolesQuerySchema.parse({
+    refresh: "true",
+    deferSearchScores: "true",
+    scoreSlug: "registered-nurse",
+  });
+
+  assert.equal(deferred.refresh, true);
+  assert.equal(deferred.deferSearchScores, true);
+  assert.equal(deferred.scoreSlug, "registered-nurse");
 });

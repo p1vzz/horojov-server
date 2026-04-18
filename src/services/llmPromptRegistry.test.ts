@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   getAiSynergyPromptConfig,
+  getCareerVibePlanPromptConfig,
   getCareerInsightsPromptConfig,
   getFullNatalAnalysisPromptConfig,
   getInterviewStrategyPromptConfig,
@@ -15,4 +16,6 @@ test('llm prompt registry returns stable service configs', () => {
   assert.equal(getInterviewStrategyPromptConfig().timeoutMs, 20_000);
   assert.equal(getFullNatalAnalysisPromptConfig().timeoutMs, 32_000);
   assert.equal(getAiSynergyPromptConfig().timeoutMs, 22_000);
+  assert.equal(getCareerVibePlanPromptConfig().feature, 'career vibe plan');
+  assert.equal(getCareerVibePlanPromptConfig().timeoutMs, 24_000);
 });

@@ -65,3 +65,14 @@ export function getAiSynergyPromptConfig(): LlmPromptConfig {
     timeoutMs: 22_000,
   };
 }
+
+export function getCareerVibePlanPromptConfig(): LlmPromptConfig {
+  return {
+    feature: 'career vibe plan',
+    model: env.OPENAI_CAREER_VIBE_PLAN_MODEL,
+    promptVersion: env.OPENAI_CAREER_VIBE_PLAN_PROMPT_VERSION,
+    temperature: env.OPENAI_CAREER_VIBE_PLAN_TEMPERATURE,
+    maxTokens: env.OPENAI_CAREER_VIBE_PLAN_MAX_TOKENS,
+    timeoutMs: 24_000,
+  };
+}

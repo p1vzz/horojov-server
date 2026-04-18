@@ -23,6 +23,7 @@ import {
 import {
   fetchJobWithProviderFallback,
   isLikelyChallengeJobPayload,
+  type NormalizedJobPayload,
 } from '../jobProviders.js';
 import { validateAndCanonicalizeJobUrl } from '../jobUrl.js';
 import {
@@ -40,6 +41,68 @@ import {
   stripRawHtmlFromPayload,
 } from './common.js';
 import { analyzeSchema } from './schemas.js';
+
+function asStringArray(input: unknown, maxItems: number) {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((entry): entry is string => typeof entry === "string")
+    .slice(0, maxItems);
+}
+
+export function buildCachedJobAnalyzeResponse(input: {
+  analysisId: string;
+  providerUsed: string | null;
+  rawCacheHit: boolean;
+  parsedCacheHit: boolean;
+  plan: 'free' | 'premium';
+  versions: {
+    parserVersion: string;
+    rubricVersion: string;
+    modelVersion: string;
+  };
+  cachedResult: Record<string, unknown>;
+  parsedFeaturesObject: Record<string, unknown>;
+  normalizedJob: NormalizedJobPayload;
+}) {
+  const descriptors = asStringArray(input.cachedResult.descriptors, 8);
+
+  return {
+    analysisId: input.analysisId,
+    status: "done",
+    providerUsed: input.providerUsed,
+    cached: true,
+    cache: {
+      raw: input.rawCacheHit,
+      parsed: input.parsedCacheHit,
+      analysis: true,
+    },
+    usage: {
+      plan: input.plan,
+      incremented: false,
+    },
+    versions: input.versions,
+    scores: input.cachedResult.scores ?? null,
+    breakdown: Array.isArray(input.cachedResult.breakdown)
+      ? input.cachedResult.breakdown
+      : [],
+    jobSummary:
+      typeof input.cachedResult.jobSummary === "string"
+        ? input.cachedResult.jobSummary
+        : "",
+    tags: asStringArray(input.cachedResult.tags, 40),
+    descriptors:
+      descriptors.length > 0
+        ? descriptors
+        : asStringArray(input.parsedFeaturesObject.descriptors, 8),
+    job: {
+      title: input.normalizedJob.title,
+      company: input.normalizedJob.company,
+      location: input.normalizedJob.location,
+      employmentType: input.normalizedJob.employmentType,
+      source: input.normalizedJob.source,
+    },
+  };
+}
 
 export async function handleJobAnalyze(
   request: FastifyRequest,
@@ -389,6 +452,12 @@ export async function handleJobAnalyze(
       .send({ error: "Parsed vacancy cache is unavailable" });
   }
 
+  const parsedFeatures = parsedDoc.parsed;
+  const parsedFeaturesObject =
+    parsedFeatures && typeof parsedFeatures === "object"
+      ? (parsedFeatures as Record<string, unknown>)
+      : {};
+
   const analysisFilter = {
     userId: auth.user._id,
     profileHash: profile.profileHash,
@@ -401,51 +470,26 @@ export async function handleJobAnalyze(
     ? null
     : await collections.jobAnalyses.findOne(analysisFilter);
   if (cachedAnalysis) {
-    return {
+    return buildCachedJobAnalyzeResponse({
       analysisId: cachedAnalysis._id.toHexString(),
-      status: "done",
       providerUsed: providerUsed ?? rawDoc.provider,
-      cached: true,
-      cache: {
-        raw: rawCacheHit,
-        parsed: parsedCacheHit,
-        analysis: true,
-      },
-      usage: {
-        plan,
-        incremented: false,
-      },
+      rawCacheHit,
+      parsedCacheHit,
+      plan,
       versions,
-      scores: (cachedAnalysis.result as Record<string, unknown>).scores ?? null,
-      breakdown:
-        (cachedAnalysis.result as Record<string, unknown>).breakdown ?? [],
-      jobSummary:
-        (cachedAnalysis.result as Record<string, unknown>).jobSummary ?? "",
-      tags: (cachedAnalysis.result as Record<string, unknown>).tags ?? [],
-    };
+      cachedResult: cachedAnalysis.result as Record<string, unknown>,
+      parsedFeaturesObject,
+      normalizedJob,
+    });
   }
-
-  const parsedFeatures = parsedDoc.parsed;
-  const parsedFeaturesObject =
-    parsedFeatures && typeof parsedFeatures === "object"
-      ? (parsedFeatures as Record<string, unknown>)
-      : {};
 
   const featuresForAnalysis = {
     parserVersion:
       typeof parsedFeaturesObject.parserVersion === "string"
         ? parsedFeaturesObject.parserVersion
         : versions.parserVersion,
-    tags: Array.isArray(parsedFeaturesObject.tags)
-      ? parsedFeaturesObject.tags
-          .filter((entry): entry is string => typeof entry === "string")
-          .slice(0, 40)
-      : [],
-    descriptors: Array.isArray(parsedFeaturesObject.descriptors)
-      ? parsedFeaturesObject.descriptors
-          .filter((entry): entry is string => typeof entry === "string")
-          .slice(0, 8)
-      : [],
+    tags: asStringArray(parsedFeaturesObject.tags, 40),
+    descriptors: asStringArray(parsedFeaturesObject.descriptors, 8),
     summary:
       typeof parsedFeaturesObject.summary === "string"
         ? parsedFeaturesObject.summary

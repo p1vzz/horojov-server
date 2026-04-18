@@ -90,6 +90,13 @@ const DOMAIN_BASE_TRAITS: Record<string, Partial<DiscoverRoleTraitVectorDoc>> = 
   Healthcare: { people: 0.82, detail: 0.72, operations: 0.62, research: 0.48 },
   'Sales & Growth': { communication: 0.84, business: 0.82, people: 0.64, leadership: 0.46 },
   'Product & Strategy': { business: 0.78, leadership: 0.7, communication: 0.74, analytical: 0.62 },
+  'Administration & Office': { detail: 0.78, operations: 0.72, communication: 0.56, business: 0.46 },
+  'Skilled Trades': { operations: 0.78, technical: 0.72, detail: 0.6, analytical: 0.38 },
+  'Hospitality & Service': { people: 0.76, communication: 0.64, operations: 0.56, detail: 0.4 },
+  'Transportation & Logistics': { operations: 0.8, detail: 0.58, technical: 0.46, analytical: 0.38 },
+  'Public Safety': { operations: 0.74, leadership: 0.58, people: 0.56, detail: 0.54 },
+  'Agriculture & Environment': { operations: 0.64, research: 0.52, technical: 0.46, detail: 0.46 },
+  'Personal Care & Wellness': { people: 0.82, creative: 0.48, communication: 0.58, operations: 0.38 },
 };
 
 const TITLE_TRAIT_RULES: Array<{ regex: RegExp; delta: Partial<DiscoverRoleTraitVectorDoc> }> = [
@@ -147,7 +154,7 @@ const HOUSE_TRAIT_BONUS: Record<number, Partial<DiscoverRoleTraitVectorDoc>> = {
   12: { research: 0.04, creative: 0.05, people: 0.04 },
 };
 
-const DISCOVER_ROLES_ALGORITHM_VERSION = 'discover-roles-v1';
+const DISCOVER_ROLES_ALGORITHM_VERSION = 'discover-roles-v2';
 const RECOMMENDED_CACHE_SIZE = 12;
 const MIN_QUERY_LENGTH = 2;
 const SOURCE_URL_BASE = 'https://www.onetonline.org/link/summary/';
@@ -307,6 +314,357 @@ const MANUAL_ROLE_SEEDS: RoleSeedInput[] = [
   { title: 'Talent Acquisition Specialist', onetCode: null, majorGroup: '13', domain: 'Business & Finance', source: 'manual', aliases: ['Recruiter', 'Technical Recruiter'] },
   { title: 'Solutions Architect', onetCode: null, majorGroup: '15', domain: 'Data & Technology', source: 'manual', aliases: ['Enterprise Architect'] },
 ];
+
+const GENERAL_ROLE_GROUPS: Array<{ domain: string; majorGroup: string | null; titles: string[] }> = [
+  {
+    domain: 'Healthcare',
+    majorGroup: '29',
+    titles: [
+      'Registered Nurse',
+      'Physician Assistant',
+      'Medical Assistant',
+      'Dental Hygienist',
+      'Radiologic Technologist',
+      'Respiratory Therapist',
+      'Speech-Language Pathologist',
+      'Dietitian',
+      'Pharmacist',
+      'Pharmacy Technician',
+      'Medical Laboratory Technician',
+      'Surgical Technologist',
+      'Paramedic',
+      'Emergency Medical Technician',
+      'Veterinarian',
+      'Veterinary Technician',
+      'Optometrist',
+      'Medical Records Specialist',
+      'Healthcare Administrator',
+      'Clinical Research Coordinator',
+      'Public Health Analyst',
+      'Epidemiologist',
+      'Community Health Worker',
+      'Mental Health Technician',
+      'Dental Assistant',
+      'Home Health Aide',
+      'Massage Therapist',
+      'Chiropractor',
+    ],
+  },
+  {
+    domain: 'Education',
+    majorGroup: '25',
+    titles: [
+      'Preschool Teacher',
+      'High School Teacher',
+      'College Professor',
+      'Instructional Designer',
+      'School Counselor',
+      'Librarian',
+      'Tutor',
+      'Training and Development Specialist',
+      'Corporate Trainer',
+      'Education Administrator',
+      'Curriculum Developer',
+      'Teaching Assistant',
+      'Adult Basic Education Teacher',
+      'ESL Teacher',
+      'Music Teacher',
+      'Art Teacher',
+      'Athletic Coach',
+      'Museum Educator',
+      'Academic Advisor',
+      'Learning Specialist',
+    ],
+  },
+  {
+    domain: 'Business & Finance',
+    majorGroup: '13',
+    titles: [
+      'Accountant',
+      'Auditor',
+      'Bookkeeper',
+      'Payroll Specialist',
+      'Tax Preparer',
+      'Personal Financial Advisor',
+      'Loan Officer',
+      'Insurance Underwriter',
+      'Claims Adjuster',
+      'Actuary',
+      'Economist',
+      'Management Analyst',
+      'Operations Analyst',
+      'Procurement Specialist',
+      'Supply Chain Analyst',
+      'Pricing Analyst',
+      'Investment Banker',
+      'Portfolio Manager',
+      'Real Estate Appraiser',
+      'Real Estate Agent',
+      'Property Manager',
+      'Office Manager',
+      'Executive Assistant',
+      'Administrative Assistant',
+      'Data Entry Clerk',
+      'Records Manager',
+      'Compliance Analyst',
+      'Risk Manager',
+      'Benefits Specialist',
+      'Compensation Analyst',
+    ],
+  },
+  {
+    domain: 'Management & Operations',
+    majorGroup: '11',
+    titles: [
+      'Project Manager',
+      'Operations Manager',
+      'Restaurant Manager',
+      'Hotel Manager',
+      'Retail Store Manager',
+      'Facilities Manager',
+      'Construction Manager',
+      'Warehouse Manager',
+      'Manufacturing Manager',
+      'Procurement Manager',
+      'Training Manager',
+      'Administrative Services Manager',
+      'Event Manager',
+      'Fleet Manager',
+      'Distribution Manager',
+      'Call Center Manager',
+      'Nonprofit Program Manager',
+      'City Manager',
+      'Risk Management Director',
+      'Sustainability Manager',
+    ],
+  },
+  {
+    domain: 'Sales & Growth',
+    majorGroup: '41',
+    titles: [
+      'Sales Representative',
+      'Account Executive',
+      'Account Manager',
+      'Business Development Representative',
+      'Sales Manager',
+      'Retail Sales Associate',
+      'Insurance Sales Agent',
+      'Travel Agent',
+      'Marketing Specialist',
+      'Digital Marketing Specialist',
+      'SEO Specialist',
+      'Content Marketing Manager',
+      'Social Media Manager',
+      'Communications Specialist',
+      'Publicist',
+      'Community Manager',
+      'Partnerships Manager',
+      'Merchandiser',
+      'E-commerce Specialist',
+      'Market Analyst',
+      'Fundraiser',
+      'Admissions Representative',
+    ],
+  },
+  {
+    domain: 'Creative & Media',
+    majorGroup: '27',
+    titles: [
+      'Copywriter',
+      'Editor',
+      'Technical Writer',
+      'Translator',
+      'Interpreter',
+      'Photographer',
+      'Videographer',
+      'Film Editor',
+      'Animator',
+      'Illustrator',
+      'Art Director',
+      'Creative Director',
+      'Fashion Designer',
+      'Industrial Designer',
+      'Landscape Architect',
+      'Architect',
+      'Urban Planner',
+      'Producer',
+      'Podcast Producer',
+      'Sound Engineer',
+      'Musician',
+      'Actor',
+      'Writer',
+      'Content Creator',
+    ],
+  },
+  {
+    domain: 'Legal',
+    majorGroup: '23',
+    titles: [
+      'Paralegal',
+      'Legal Assistant',
+      'Court Reporter',
+      'Mediator',
+      'Judge',
+      'Legal Secretary',
+      'Contract Administrator',
+      'Policy Analyst',
+      'Legislative Assistant',
+      'Claims Examiner',
+      'Title Examiner',
+      'Immigration Specialist',
+    ],
+  },
+  {
+    domain: 'Public Safety',
+    majorGroup: null,
+    titles: [
+      'Police Officer',
+      'Firefighter',
+      'Correctional Officer',
+      'Security Guard',
+      'Emergency Dispatcher',
+      'Forensic Science Technician',
+      'Probation Officer',
+      'Customs Officer',
+      'Occupational Health and Safety Specialist',
+      'Disaster Recovery Specialist',
+      'Private Investigator',
+      'Loss Prevention Specialist',
+    ],
+  },
+  {
+    domain: 'Skilled Trades',
+    majorGroup: null,
+    titles: [
+      'Electrician',
+      'Plumber',
+      'Carpenter',
+      'Welder',
+      'Machinist',
+      'HVAC Technician',
+      'Automotive Technician',
+      'Aircraft Mechanic',
+      'Diesel Mechanic',
+      'Industrial Machinery Mechanic',
+      'Maintenance Technician',
+      'Elevator Installer',
+      'Solar Installer',
+      'Wind Turbine Technician',
+      'Line Installer',
+      'Telecommunications Technician',
+      'Painter',
+      'Roofer',
+      'Mason',
+      'Glazier',
+      'Pipefitter',
+      'Tool and Die Maker',
+      'CNC Operator',
+      'Appliance Repair Technician',
+      'Locksmith',
+      'Jeweler',
+      'Baker',
+      'Butcher',
+      'Chef',
+      'Head Cook',
+    ],
+  },
+  {
+    domain: 'Transportation & Logistics',
+    majorGroup: null,
+    titles: [
+      'Truck Driver',
+      'Delivery Driver',
+      'Bus Driver',
+      'Taxi Driver',
+      'Pilot',
+      'Flight Attendant',
+      'Air Traffic Controller',
+      'Logistics Coordinator',
+      'Dispatcher',
+      'Shipping and Receiving Clerk',
+      'Inventory Specialist',
+      'Forklift Operator',
+      'Train Conductor',
+      'Railroad Worker',
+      'Ship Captain',
+      'Deckhand',
+      'Crane Operator',
+      'Heavy Equipment Operator',
+      'Courier',
+      'Route Planner',
+    ],
+  },
+  {
+    domain: 'Hospitality & Service',
+    majorGroup: null,
+    titles: [
+      'Customer Service Representative',
+      'Receptionist',
+      'Concierge',
+      'Hotel Front Desk Agent',
+      'Server',
+      'Bartender',
+      'Barista',
+      'Caterer',
+      'Event Planner',
+      'Tour Guide',
+      'Housekeeper',
+      'Janitor',
+      'Laundry Worker',
+      'Childcare Worker',
+      'Nanny',
+      'Personal Trainer',
+      'Fitness Instructor',
+      'Hair Stylist',
+      'Cosmetologist',
+      'Esthetician',
+      'Manicurist',
+      'Funeral Director',
+    ],
+  },
+  {
+    domain: 'Agriculture & Environment',
+    majorGroup: null,
+    titles: [
+      'Farmer',
+      'Farm Manager',
+      'Agricultural Technician',
+      'Agronomist',
+      'Soil Scientist',
+      'Conservation Scientist',
+      'Forester',
+      'Park Ranger',
+      'Wildlife Biologist',
+      'Zoologist',
+      'Environmental Scientist',
+      'Environmental Technician',
+      'Hydrologist',
+      'Meteorologist',
+      'Cartographer',
+      'Surveyor',
+      'Geographer',
+      'Archaeologist',
+      'Food Scientist',
+      'Water Treatment Operator',
+      'Recycling Coordinator',
+      'Landscape Designer',
+      'Groundskeeper',
+      'Animal Trainer',
+    ],
+  },
+];
+
+function buildGeneralRoleSeeds(): RoleSeedInput[] {
+  return GENERAL_ROLE_GROUPS.flatMap((group) =>
+    group.titles.map((title) => ({
+      title,
+      onetCode: null,
+      majorGroup: group.majorGroup,
+      domain: group.domain,
+      source: 'manual' as const,
+    }))
+  );
+}
 
 function zeroTraitVector(initial = 0): DiscoverRoleTraitVectorDoc {
   return {
@@ -472,7 +830,7 @@ function parseRoleSeeds(): RoleSeedInput[] {
       },
     ];
   });
-  return [...fromOnet, ...MANUAL_ROLE_SEEDS];
+  return [...fromOnet, ...MANUAL_ROLE_SEEDS, ...buildGeneralRoleSeeds()];
 }
 
 function buildCatalogDocs(now: Date) {
@@ -798,6 +1156,8 @@ type DiscoverRolesInput = {
   limit: number;
   searchLimit: number;
   refresh: boolean;
+  deferSearchScores: boolean;
+  scoreSlug: string;
   log?: LoggerLike;
 };
 
@@ -824,8 +1184,9 @@ export type DiscoverRolesResponse = {
     title: string;
     domain: string;
     tags: string[];
-    score: number;
-    scoreLabel: string;
+    score?: number;
+    scoreLabel?: string;
+    scoreStatus: 'ready' | 'deferred';
   }>;
   query: string;
   meta: {
@@ -976,21 +1337,23 @@ export async function getDiscoverRoles(input: DiscoverRolesInput): Promise<Disco
       .map((role) => {
         const rank = queryMatchRank(role, normalizedQuery, tokens);
         if (rank <= 0) return null;
-        const score = scoreForRole(role);
-        return { role, rank, score };
+        const sortScore = input.deferSearchScores ? 0 : scoreForRole(role);
+        return { role, rank, sortScore };
       })
-      .filter((entry): entry is { role: DiscoverRoleCatalogDoc; rank: number; score: number } => Boolean(entry))
-      .sort((a, b) => b.rank - a.rank || b.score - a.score || a.role.title.localeCompare(b.role.title))
+      .filter((entry): entry is { role: DiscoverRoleCatalogDoc; rank: number; sortScore: number } => Boolean(entry))
+      .sort((a, b) => b.rank - a.rank || b.sortScore - a.sortScore || a.role.title.localeCompare(b.role.title))
       .slice(0, searchLimit);
 
     for (const entry of rankedMatches) {
+      const shouldScore = !input.deferSearchScores || entry.role.slug === input.scoreSlug;
+      const score = shouldScore ? scoreForRole(entry.role) : null;
       search.push({
         slug: entry.role.slug,
         title: entry.role.title,
         domain: entry.role.domain,
         tags: entry.role.tags.slice(0, 2),
-        score: entry.score,
-        scoreLabel: `${entry.score}%`,
+        ...(score !== null ? { score, scoreLabel: `${score}%` } : {}),
+        scoreStatus: score !== null ? 'ready' : 'deferred',
       });
     }
   }

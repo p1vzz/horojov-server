@@ -50,6 +50,8 @@ Provide one current map of backend API surface and runtime orchestration (startu
 - `POST /full-natal-analysis/regenerate` (premium)
 - `GET /career-insights`
 - `GET /discover-roles`
+  - query: `query`, `limit`, `searchLimit`, `refresh`
+  - optional deferred scoring for mobile search: `deferSearchScores=true` returns search rows without scores; `scoreSlug=<role-slug>` returns the deterministic score for one selected row
 
 ### Jobs (`/api/jobs`)
 

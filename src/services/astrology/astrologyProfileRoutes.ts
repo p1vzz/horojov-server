@@ -8,11 +8,13 @@ import {
 } from '../dailyTransit.js';
 import {
   aiSynergyHistoryQuerySchema,
+  careerVibePlanQuerySchema,
   natalChartRequestSchema,
   upsertBirthProfile,
 } from './astrologyShared.js';
 import { requireAstrologyAuth } from './astrologyRouteGuards.js';
 import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
+import { getOrCreateCareerVibePlanForUser } from '../careerVibePlan.js';
 
 export function registerAstrologyProfileRoutes(
   app: FastifyInstance,
@@ -88,6 +90,39 @@ export function registerAstrologyProfileRoutes(
       }
       request.log.error({ error }, "daily transit request failed");
       return reply.code(502).send({ error: "Unable to build daily transit" });
+    }
+  });
+
+  app.get("/career-vibe-plan", async (request, reply) => {
+    const auth = await requireAstrologyAuth(request, reply, deps);
+    if (!auth) return;
+
+    const parsedQuery = careerVibePlanQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return reply.code(400).send({
+        error: "Invalid query parameters",
+        details: parsedQuery.error.flatten().fieldErrors,
+      });
+    }
+
+    try {
+      const result = await getOrCreateCareerVibePlanForUser({
+        userId: auth.user._id,
+        date: buildTodayDate(),
+        tier: auth.user.subscriptionTier === "premium" ? "premium" : "free",
+        logger: request.log,
+        refresh: parsedQuery.data.refresh,
+      });
+      return result.item;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("Birth profile not found")) {
+        return reply.code(404).send({
+          error: "Birth profile not found. Complete onboarding first.",
+        });
+      }
+      request.log.error({ error }, "career vibe plan request failed");
+      return reply.code(502).send({ error: "Unable to build career vibe plan" });
     }
   });
 

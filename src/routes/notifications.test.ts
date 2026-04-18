@@ -1096,11 +1096,13 @@ test('burnout and lunar alert endpoints do not wait for ai synergy generation', 
 test('interview strategy settings trigger refill when autofill is confirmed', async () => {
   const auth = buildFakeAuthContext('premium');
   let refillCalls = 0;
+  const savedInputs: Array<Parameters<NotificationRouteDependencies['upsertInterviewStrategySettingsForUser']>[0]> = [];
 
   const app = await buildNotificationsTestApp({
     authenticateByAuthorizationHeader: async () => auth,
-    upsertInterviewStrategySettingsForUser: async () =>
-      ({
+    upsertInterviewStrategySettingsForUser: async (input) => {
+      savedInputs.push(input);
+      return {
         enabled: true,
         timezoneIana: 'Europe/Warsaw',
         slotDurationMinutes: 60,
@@ -1116,7 +1118,8 @@ test('interview strategy settings trigger refill when autofill is confirmed', as
         lastGeneratedAt: null,
         updatedAt: new Date('2026-03-30T00:00:00.000Z'),
         source: 'saved',
-      }) as never,
+      } as never;
+    },
     maybeRefillInterviewStrategyWindowForUser: async () => {
       refillCalls += 1;
       return {
@@ -1149,6 +1152,65 @@ test('interview strategy settings trigger refill when autofill is confirmed', as
     assert.equal(response.statusCode, 200);
     assert.equal(refillCalls, 1);
     assert.equal(response.json().settings.enabled, true);
+    assert.equal(savedInputs.length, 1);
+    const savedInput = savedInputs[0];
+    assert.ok(savedInput);
+    assert.equal(savedInput.slotDurationMinutes, 60);
+    assert.deepEqual(savedInput.allowedWeekdays, [1, 2, 3]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('interview strategy settings accept minimal payload for fixed-range planner', async () => {
+  const auth = buildFakeAuthContext('premium');
+  const savedInputs: Array<Parameters<NotificationRouteDependencies['upsertInterviewStrategySettingsForUser']>[0]> = [];
+  const app = await buildNotificationsTestApp({
+    authenticateByAuthorizationHeader: async () => auth,
+    upsertInterviewStrategySettingsForUser: async (input) => {
+      savedInputs.push(input);
+      return {
+        enabled: true,
+        timezoneIana: 'Europe/Warsaw',
+        slotDurationMinutes: input.slotDurationMinutes,
+        allowedWeekdays: input.allowedWeekdays,
+        workdayStartMinute: input.workdayStartMinute,
+        workdayEndMinute: input.workdayEndMinute,
+        quietHoursStartMinute: input.quietHoursStartMinute,
+        quietHoursEndMinute: input.quietHoursEndMinute,
+        slotsPerWeek: input.slotsPerWeek,
+        autoFillConfirmedAt: null,
+        autoFillStartAt: null,
+        filledUntilDateKey: null,
+        lastGeneratedAt: null,
+        updatedAt: null,
+        source: 'saved',
+      } as never;
+    },
+  });
+
+  try {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/notifications/interview-strategy-settings',
+      headers: {
+        authorization: 'Bearer test',
+      },
+      payload: {
+        enabled: true,
+        timezoneIana: 'Europe/Warsaw',
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(savedInputs.length, 1);
+    const savedInput = savedInputs[0];
+    assert.ok(savedInput);
+    assert.equal(savedInput.slotDurationMinutes, 60);
+    assert.deepEqual(savedInput.allowedWeekdays, [1, 2, 3, 4, 5]);
+    assert.equal(savedInput.workdayStartMinute, 540);
+    assert.equal(savedInput.workdayEndMinute, 1080);
+    assert.equal(savedInput.slotsPerWeek, 5);
   } finally {
     await app.close();
   }

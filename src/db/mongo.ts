@@ -209,6 +209,63 @@ export type MorningBriefingMetricsDoc = {
   aiSynergy: number;
 };
 
+export type CareerVibePlanMetricsDoc = MorningBriefingMetricsDoc & {
+  opportunity: number;
+};
+
+export type CareerVibePlanContentDoc = {
+  headline: string;
+  summary: string;
+  primaryAction: string;
+  bestFor: string[];
+  avoid: string[];
+  peakWindow: string;
+  focusStrategy: string;
+  communicationStrategy: string;
+  aiWorkStrategy: string;
+  riskGuardrail: string;
+};
+
+export type CareerVibePlanExplanationDoc = {
+  drivers: string[];
+  cautions: string[];
+  metricNotes: string[];
+};
+
+export type CareerVibeDailyDoc = {
+  _id: ObjectId;
+  userId: ObjectId;
+  profileHash: string;
+  dateKey: string;
+  schemaVersion: string;
+  tier: 'free' | 'premium';
+  model: string;
+  promptVersion: string;
+  narrativeSource: 'template' | 'llm';
+  modeLabel: string;
+  metrics: CareerVibePlanMetricsDoc;
+  plan: CareerVibePlanContentDoc;
+  explanation: CareerVibePlanExplanationDoc;
+  sources: {
+    dailyTransitDateKey: string;
+    aiSynergyDateKey: string | null;
+    dailyVibeAlgorithmVersion: string;
+    aiSynergyAlgorithmVersion: string | null;
+  };
+  generatedAt: Date;
+  staleAfter: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type MorningBriefingPlanSnapshotDoc = {
+  headline: string;
+  summary: string;
+  primaryAction: string;
+  peakWindow: string;
+  riskGuardrail: string;
+};
+
 export type MorningBriefingDailyDoc = {
   _id: ObjectId;
   userId: ObjectId;
@@ -219,6 +276,7 @@ export type MorningBriefingDailyDoc = {
   summary: string;
   modeLabel: string;
   metrics: MorningBriefingMetricsDoc;
+  plan?: MorningBriefingPlanSnapshotDoc;
   insights?: {
     vibe: {
       algorithmVersion: string;
@@ -637,6 +695,10 @@ export type InterviewStrategyScoreBreakdownDoc = {
   weekdayWeight: number;
   hourWeight: number;
   conflictPenalty: number;
+  natalCommunicationScore?: number;
+  transitNatalScore?: number;
+  careerHouseScore?: number;
+  rangeQualityScore?: number;
 };
 
 export type InterviewStrategySlotSource = 'manual_refresh' | 'scheduler_refill' | 'bootstrap';
@@ -652,6 +714,7 @@ export type InterviewStrategySlotDoc = {
   timezoneIana: string;
   score: number;
   explanation: string;
+  calendarNote?: string;
   breakdown: InterviewStrategyScoreBreakdownDoc;
   algorithmVersion: InterviewStrategyAlgorithmVersion;
   source: InterviewStrategySlotSource;
@@ -679,6 +742,7 @@ export type MongoCollections = {
   careerInsights: Collection<CareerInsightsDoc>;
   dailyTransits: Collection<DailyTransitDoc>;
   aiSynergyDaily: Collection<AiSynergyDailyDoc>;
+  careerVibeDaily: Collection<CareerVibeDailyDoc>;
   morningBriefingDaily: Collection<MorningBriefingDailyDoc>;
   fullNatalCareerAnalysis: Collection<FullNatalCareerAnalysisDoc>;
   discoverRoleCatalog: Collection<DiscoverRoleCatalogDoc>;
@@ -736,6 +800,7 @@ export async function getCollections(): Promise<MongoCollections> {
     careerInsights: db.collection<CareerInsightsDoc>('career_insights'),
     dailyTransits: db.collection<DailyTransitDoc>('daily_transits'),
     aiSynergyDaily: db.collection<AiSynergyDailyDoc>('ai_synergy_daily'),
+    careerVibeDaily: db.collection<CareerVibeDailyDoc>('career_vibe_daily'),
     morningBriefingDaily: db.collection<MorningBriefingDailyDoc>('morning_briefing_daily'),
     fullNatalCareerAnalysis: db.collection<FullNatalCareerAnalysisDoc>('full_natal_career_analysis'),
     discoverRoleCatalog: db.collection<DiscoverRoleCatalogDoc>('discover_role_catalog'),
@@ -784,6 +849,11 @@ export async function ensureMongoIndexes() {
       );
       await collections.aiSynergyDaily.createIndex({ userId: 1, profileHash: 1, dateKey: -1, updatedAt: -1 });
       await collections.aiSynergyDaily.createIndex({ userId: 1, dateKey: -1 });
+      await collections.careerVibeDaily.createIndex(
+        { userId: 1, profileHash: 1, dateKey: 1, schemaVersion: 1, tier: 1, promptVersion: 1, model: 1 },
+        { unique: true }
+      );
+      await collections.careerVibeDaily.createIndex({ userId: 1, dateKey: -1 });
       await collections.morningBriefingDaily.createIndex(
         { userId: 1, profileHash: 1, dateKey: 1, schemaVersion: 1 },
         { unique: true }

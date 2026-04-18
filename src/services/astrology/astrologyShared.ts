@@ -83,6 +83,14 @@ export const HOUSE_TYPE = "placidus";
 export const MIN_CAREER_INSIGHTS = 3;
 export const MAX_CAREER_INSIGHTS = 5;
 
+const queryBooleanSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off", ""].includes(normalized)) return false;
+  return value;
+}, z.boolean()).default(false);
+
 export const careerInsightsQuerySchema = z.object({
   tier: z.enum(["free", "premium"]).default("free"),
   regenerate: z.coerce.boolean().default(false),
@@ -92,7 +100,9 @@ export const discoverRolesQuerySchema = z.object({
   query: z.string().trim().max(80).default(""),
   limit: z.coerce.number().int().min(3).max(8).default(5),
   searchLimit: z.coerce.number().int().min(5).max(30).default(20),
-  refresh: z.coerce.boolean().default(false),
+  refresh: queryBooleanSchema,
+  deferSearchScores: queryBooleanSchema,
+  scoreSlug: z.string().trim().max(120).default(""),
 });
 
 export const aiSynergyHistoryQuerySchema = z.object({
@@ -101,6 +111,10 @@ export const aiSynergyHistoryQuerySchema = z.object({
 });
 
 export const morningBriefingQuerySchema = z.object({
+  refresh: z.coerce.boolean().default(false),
+});
+
+export const careerVibePlanQuerySchema = z.object({
   refresh: z.coerce.boolean().default(false),
 });
 

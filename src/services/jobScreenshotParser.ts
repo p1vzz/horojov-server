@@ -7,6 +7,7 @@ const MAX_REASON_LENGTH = 220;
 const MIN_DESCRIPTION_LENGTH = 80;
 const MAX_DESCRIPTION_LENGTH = 7000;
 const ALLOWED_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const CORE_REQUIRED_FIELDS = new Set(['title', 'company', 'description']);
 
 const PARSE_SYSTEM_PROMPT = [
   'You extract job vacancy data from mobile screenshots.',
@@ -272,7 +273,7 @@ function mergeDescription(input: { description: string | null; highlights: strin
   return merged.slice(0, MAX_DESCRIPTION_LENGTH);
 }
 
-function finalizeParseResult(payload: ScreenshotParsePayload, imageCount: number): JobScreenshotParseResult {
+export function finalizeParseResult(payload: ScreenshotParsePayload, imageCount: number): JobScreenshotParseResult {
   if (payload.status === 'not_vacancy') {
     throw new JobScreenshotParseError('screenshot_not_vacancy', 'Uploaded screenshots do not look like a vacancy page', {
       reason: payload.reason,
@@ -285,14 +286,14 @@ function finalizeParseResult(payload: ScreenshotParsePayload, imageCount: number
     highlights: payload.job.highlights,
   });
 
-  const missing = new Set(payload.missingFields);
+  const missing = new Set(payload.missingFields.filter((field) => CORE_REQUIRED_FIELDS.has(field)));
   if (!payload.job.title) missing.add('title');
   if (!payload.job.company) missing.add('company');
   if (!descriptionMerged || descriptionMerged.length < MIN_DESCRIPTION_LENGTH) {
     missing.add('description');
   }
 
-  if (payload.status === 'incomplete' || missing.size > 0) {
+  if (missing.size > 0) {
     throw new JobScreenshotParseError('screenshot_incomplete_info', 'Not enough visible vacancy data in screenshots', {
       reason: payload.reason,
       confidence: payload.confidence,

@@ -1,6 +1,6 @@
 # Jobs API Contract
 **Status:** Active  
-**Last synced:** 2026-03-30
+**Last synced:** 2026-04-17
 
 ## Goal
 
@@ -25,7 +25,7 @@ All routes require Bearer auth (`401 { error: "Unauthorized" }` on missing/inval
 - `preflight` body: `{ url: string(8..2048) }`
 - `analyze` body: `{ url: string(8..2048), regenerate?: boolean }`
 - `analyze-screenshots` body:
-  - `screenshots`: array `1..JOB_SCREENSHOT_MAX_IMAGES`
+  - `screenshots`: array `1..JOB_SCREENSHOT_MAX_IMAGES` (default `6`)
   - each item: `{ dataUrl: string(64..12_000_000) }`
   - `regenerate` is accepted but not used in current screenshot flow.
 
@@ -39,6 +39,11 @@ Validation is based on `validateAndCanonicalizeJobUrl`:
 - `unsupported_protocol` => `400` (only `https://`)
 - `unsupported_source` => `422`
 - `unsupported_path` => `422`
+
+LinkedIn canonicalization accepts concrete job detail paths and LinkedIn jobs
+surfaces carrying a numeric `currentJobId`, then canonicalizes both to
+`https://linkedin.com/jobs/view/<id>`. LinkedIn jobs collection/search pages
+without a concrete job id remain `unsupported_path`.
 
 Response shape on URL validation error:
 
@@ -72,6 +77,10 @@ Returns user plan and current usage gate:
 
 - `metrics` returns aggregated parser quality report by source.
 - `alerts` runs threshold evaluation over the same metrics window.
+- Both endpoints are technical surfaces gated by `JOB_METRICS_ENDPOINTS_ENABLED`.
+  The default is enabled outside production and disabled in production. Disabled
+  endpoints return `404 { "error": "Not found" }`.
+- Production startup rejects `JOB_METRICS_ENDPOINTS_ENABLED=true`.
 - Invalid query => `400` (`Invalid metrics query` / `Invalid alerts query`).
 
 ## `POST /preflight`
@@ -141,11 +150,13 @@ Contract specifics:
 - enforces same usage limits before parse.
 - increments usage after successful screenshot parse/score.
 - currently returns synthetic `analysisId` and does not persist `job_analyses`.
+- success requires visible role title, company name, and substantial job description/responsibilities.
+- location, seniority, and employment type are useful if visible but are not the user-facing minimum.
 
 Error mapping:
 
 - `422 code=screenshot_not_vacancy`
-- `422 code=screenshot_incomplete_info` (+ `missingFields`)
+- `422 code=screenshot_incomplete_info` (+ core `missingFields`: `title`, `company`, `description`)
 - `400` other parser validation errors
 - `502 code=screenshot_parse_failed` on unexpected parse failure
 - `429 code=usage_limit_reached` on limit block
@@ -164,7 +175,8 @@ Error mapping:
 
 - `free`: 1 successful provider call per rolling 7-day window
 - `premium`: 10 successful provider calls per UTC day
-- if `JOB_USAGE_LIMITS_ENABLED=false`: API returns effectively unlimited sentinel values.
+- outside production, `JOB_USAGE_LIMITS_ENABLED=false` returns effectively unlimited sentinel values.
+- production startup rejects `JOB_USAGE_LIMITS_ENABLED=false` and `DEV_FORCE_PREMIUM_FOR_ALL_USERS=true`.
 
 ## Source Files
 
