@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { env } from '../../config/env.js';
 import {
   getCollections,
+  type FullNatalCareerAnalysisDoc,
   type FullNatalCareerAnalysisPayloadDoc,
 } from '../../db/mongo.js';
 import type { ChartPromptPayload } from '../careerInsights.js';
@@ -12,6 +13,12 @@ import {
   generateFullNatalCareerAnalysis,
   getFullNatalAnalysisConfig,
 } from '../fullNatalAnalysis.js';
+import {
+  getOperationProgressSnapshot,
+  startOperationProgress,
+  type OperationProgressDefinition,
+  type OperationProgressSnapshot,
+} from '../operationProgress.js';
 
 export const natalChartRequestSchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
@@ -110,16 +117,20 @@ export const aiSynergyHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(90).default(30),
 });
 
+export const dailyTransitQuerySchema = z.object({
+  includeAiSynergy: queryBooleanSchema,
+});
+
 export const morningBriefingQuerySchema = z.object({
-  refresh: z.coerce.boolean().default(false),
+  refresh: queryBooleanSchema,
 });
 
 export const careerVibePlanQuerySchema = z.object({
-  refresh: z.coerce.boolean().default(false),
+  refresh: queryBooleanSchema,
 });
 
 export const fullNatalAnalysisQuerySchema = z.object({
-  refresh: z.coerce.boolean().default(false),
+  cacheOnly: queryBooleanSchema,
 });
 
 function normalizeAstrologyBaseUrl(input: string) {
@@ -421,16 +432,124 @@ export type FullNatalAnalysisRouteResponse = {
   cached: boolean;
   model: string;
   promptVersion: string;
-  narrativeSource: "template" | "llm";
+  narrativeSource: "llm";
   generatedAt: string;
+  profileUpdatedAt: string;
+  profileChangeNotice: {
+    profileUpdatedAt: string;
+    expiresAt: string;
+  } | null;
   analysis: FullNatalCareerAnalysisPayloadDoc;
 };
 
+const PROFILE_CHANGE_NOTICE_MS = 3 * 24 * 60 * 60 * 1000;
+const fullNatalAnalysisInFlight = new Map<string, Promise<FullNatalAnalysisRouteResponse>>();
+
+export const FULL_NATAL_ANALYSIS_PROGRESS_DEFINITION: OperationProgressDefinition = {
+  operation: 'full_natal_career_analysis',
+  title: 'Building Career Blueprint',
+  subtitle: 'Preparing your one-time career report from your birth details.',
+  stages: [
+    {
+      key: 'preparing_profile',
+      title: 'Preparing your birth details',
+      detail: 'We are checking the details needed to build your report.',
+    },
+    {
+      key: 'reading_chart',
+      title: 'Reading your natal chart',
+      detail: 'We are turning your chart into career signals.',
+    },
+    {
+      key: 'building_blueprint',
+      title: 'Building your career blueprint',
+      detail: 'We are shaping the long-form report and career map.',
+    },
+    {
+      key: 'backup_route',
+      title: 'Taking a backup route',
+      detail: 'The first path did not finish cleanly, so we are using a backup path. This can take a little longer.',
+    },
+    {
+      key: 'validating_report',
+      title: 'Checking the finished report',
+      detail: 'We are making sure the report is complete before saving it.',
+    },
+  ],
+};
+
+function buildFullNatalAnalysisOperationSubjectKey(input: {
+  userId: ObjectId;
+  profileHash: string;
+  promptVersion: string;
+}) {
+  return `${input.userId.toHexString()}:${input.profileHash}:${input.promptVersion}`;
+}
+
+export function resolveFullNatalProfileChangeNotice(input: {
+  profileUpdatedAt: Date;
+  previousReport: Pick<FullNatalCareerAnalysisDoc, "generatedAt"> | null;
+  now?: Date;
+}): FullNatalAnalysisRouteResponse["profileChangeNotice"] {
+  const now = input.now ?? new Date();
+  const expiresAt = new Date(input.profileUpdatedAt.getTime() + PROFILE_CHANGE_NOTICE_MS);
+  if (!input.previousReport || now.getTime() > expiresAt.getTime()) {
+    return null;
+  }
+  if (input.previousReport.generatedAt.getTime() >= input.profileUpdatedAt.getTime()) {
+    return null;
+  }
+  return {
+    profileUpdatedAt: input.profileUpdatedAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+  };
+}
+
+export function serializeFullNatalAnalysisGeneration(
+  lockKey: string,
+  producer: () => Promise<FullNatalAnalysisRouteResponse>,
+) {
+  const inFlight = fullNatalAnalysisInFlight.get(lockKey);
+  if (inFlight) return inFlight;
+
+  const next = producer().finally(() => {
+    fullNatalAnalysisInFlight.delete(lockKey);
+  });
+  fullNatalAnalysisInFlight.set(lockKey, next);
+  return next;
+}
+
+export async function getFullNatalAnalysisProgressForUser(input: {
+  userId: ObjectId;
+}): Promise<OperationProgressSnapshot> {
+  const collections = await getCollections();
+  const profile = await collections.birthProfiles.findOne(
+    { userId: input.userId },
+    { projection: { profileHash: 1 } },
+  );
+  if (!profile) {
+    return getOperationProgressSnapshot(
+      FULL_NATAL_ANALYSIS_PROGRESS_DEFINITION,
+      `${input.userId.toHexString()}:missing_profile`,
+    );
+  }
+
+  const config = getFullNatalAnalysisConfig();
+  return getOperationProgressSnapshot(
+    FULL_NATAL_ANALYSIS_PROGRESS_DEFINITION,
+    buildFullNatalAnalysisOperationSubjectKey({
+      userId: input.userId,
+      profileHash: profile.profileHash,
+      promptVersion: config.promptVersion,
+    }),
+  );
+}
+
 export async function getOrCreateFullNatalAnalysisForUser(input: {
   userId: ObjectId;
-  refresh: boolean;
+  cacheOnly?: boolean;
   logger: FastifyBaseLogger;
-}): Promise<FullNatalAnalysisRouteResponse> {
+}): Promise<FullNatalAnalysisRouteResponse | null> {
   const collections = await getCollections();
   const profile = await collections.birthProfiles.findOne({
     userId: input.userId,
@@ -441,102 +560,144 @@ export async function getOrCreateFullNatalAnalysisForUser(input: {
   const { profileHash } = profile;
 
   const config = getFullNatalAnalysisConfig();
-  if (!input.refresh) {
-    const cached = await collections.fullNatalCareerAnalysis.findOne({
+  const buildProfileChangeNotice = async () => {
+    const previousReport = await collections.fullNatalCareerAnalysis.findOne(
+      {
+        userId: input.userId,
+        profileHash: { $ne: profileHash },
+      },
+      { sort: { generatedAt: -1 }, projection: { generatedAt: 1 } },
+    );
+    return resolveFullNatalProfileChangeNotice({
+      profileUpdatedAt: profile.updatedAt,
+      previousReport,
+    });
+  };
+
+  const cached = await collections.fullNatalCareerAnalysis.findOne(
+    {
       userId: input.userId,
       profileHash,
       promptVersion: config.promptVersion,
-      model: config.model,
-    });
-
-    if (cached) {
-      return {
-        cached: true,
-        model: cached.model,
-        promptVersion: cached.promptVersion,
-        narrativeSource: cached.narrativeSource,
-        generatedAt: cached.generatedAt.toISOString(),
-        analysis: cached.analysis,
-      };
-    }
-  }
-
-  const [natalChart, latestAiSynergy, latestCareerInsight] = await Promise.all([
-    collections.natalCharts.findOne(
-      {
-        userId: input.userId,
-        profileHash,
-      },
-      { projection: { chart: 1 } },
-    ),
-    collections.aiSynergyDaily.findOne(
-      {
-        userId: input.userId,
-        profileHash,
-      },
-      { sort: { dateKey: -1, updatedAt: -1 }, projection: { score: 1, band: 1 } },
-    ),
-    collections.careerInsights.findOne(
-      {
-        userId: input.userId,
-        profileHash,
-        tier: "premium",
-      },
-      { sort: { generatedAt: -1 }, projection: { summary: 1 } },
-    ),
-  ]);
-
-  if (!natalChart) {
-    throw new Error("Natal chart not found. Generate chart first.");
-  }
-
-  const parsedChart = westernChartSchema.safeParse(natalChart.chart);
-  if (!parsedChart.success) {
-    input.logger.error(
-      { issues: parsedChart.error.issues },
-      "cached natal chart validation failed for full analysis",
-    );
-    throw new Error("Cached natal chart has invalid format");
-  }
-
-  const generated = await generateFullNatalCareerAnalysis({
-    chartPayload: buildChartPromptPayload(parsedChart.data),
-    context: {
-      aiSynergyScore: latestAiSynergy?.score ?? null,
-      aiSynergyBand: latestAiSynergy?.band ?? null,
-      careerInsightsSummary: latestCareerInsight?.summary ?? null,
+      narrativeSource: "llm",
     },
-  });
-
-  const now = new Date();
-  await collections.fullNatalCareerAnalysis.updateOne(
-    {
-      userId: input.userId,
-      profileHash,
-      promptVersion: generated.promptVersion,
-      model: generated.model,
-    },
-    {
-      $set: {
-        analysis: generated.analysis,
-        narrativeSource: generated.narrativeSource,
-        generatedAt: now,
-        updatedAt: now,
-      },
-      $setOnInsert: {
-        _id: new ObjectId(),
-        createdAt: now,
-      },
-    },
-    { upsert: true },
+    { sort: { generatedAt: -1 } },
   );
 
-  return {
-    cached: false,
-    model: generated.model,
-    promptVersion: generated.promptVersion,
-    narrativeSource: generated.narrativeSource,
-    generatedAt: now.toISOString(),
-    analysis: generated.analysis,
-  };
+  if (cached) {
+    return {
+      cached: true,
+      model: cached.model,
+      promptVersion: cached.promptVersion,
+      narrativeSource: "llm",
+      generatedAt: cached.generatedAt.toISOString(),
+      profileUpdatedAt: profile.updatedAt.toISOString(),
+      profileChangeNotice: await buildProfileChangeNotice(),
+      analysis: cached.analysis,
+    };
+  }
+
+  if (input.cacheOnly) {
+    return null;
+  }
+
+  const lockKey = buildFullNatalAnalysisOperationSubjectKey({
+    userId: input.userId,
+    profileHash,
+    promptVersion: config.promptVersion,
+  });
+  return serializeFullNatalAnalysisGeneration(lockKey, async () => {
+    const progress = startOperationProgress(FULL_NATAL_ANALYSIS_PROGRESS_DEFINITION, lockKey);
+    progress.setStage('preparing_profile');
+    try {
+      progress.setStage('reading_chart');
+      const [natalChart, latestAiSynergy, latestCareerInsight] = await Promise.all([
+        collections.natalCharts.findOne(
+          {
+            userId: input.userId,
+            profileHash,
+          },
+          { projection: { chart: 1 } },
+        ),
+        collections.aiSynergyDaily.findOne(
+          {
+            userId: input.userId,
+            profileHash,
+          },
+          { sort: { dateKey: -1, updatedAt: -1 }, projection: { score: 1, band: 1 } },
+        ),
+        collections.careerInsights.findOne(
+          {
+            userId: input.userId,
+            profileHash,
+            tier: "premium",
+          },
+          { sort: { generatedAt: -1 }, projection: { summary: 1 } },
+        ),
+      ]);
+
+      if (!natalChart) {
+        throw new Error("Natal chart not found. Generate chart first.");
+      }
+
+      const parsedChart = westernChartSchema.safeParse(natalChart.chart);
+      if (!parsedChart.success) {
+        input.logger.error(
+          { issues: parsedChart.error.issues },
+          "cached natal chart validation failed for full analysis",
+        );
+        throw new Error("Cached natal chart has invalid format");
+      }
+
+      progress.setStage('building_blueprint');
+      const generated = await generateFullNatalCareerAnalysis({
+        chartPayload: buildChartPromptPayload(parsedChart.data),
+        context: {
+          aiSynergyScore: latestAiSynergy?.score ?? null,
+          aiSynergyBand: latestAiSynergy?.band ?? null,
+          careerInsightsSummary: latestCareerInsight?.summary ?? null,
+        },
+        logger: input.logger,
+        progress,
+      });
+
+      const now = new Date();
+      await collections.fullNatalCareerAnalysis.updateOne(
+        {
+          userId: input.userId,
+          profileHash,
+          promptVersion: generated.promptVersion,
+        },
+        {
+          $set: {
+            analysis: generated.analysis,
+            model: generated.model,
+            narrativeSource: generated.narrativeSource,
+            generatedAt: now,
+            updatedAt: now,
+          },
+          $setOnInsert: {
+            _id: new ObjectId(),
+            createdAt: now,
+          },
+        },
+        { upsert: true },
+      );
+
+      progress.complete();
+      return {
+        cached: false,
+        model: generated.model,
+        promptVersion: generated.promptVersion,
+        narrativeSource: generated.narrativeSource,
+        generatedAt: now.toISOString(),
+        profileUpdatedAt: profile.updatedAt.toISOString(),
+        profileChangeNotice: await buildProfileChangeNotice(),
+        analysis: generated.analysis,
+      };
+    } catch (error) {
+      progress.fail();
+      throw error;
+    }
+  });
 }

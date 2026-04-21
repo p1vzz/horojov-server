@@ -1,5 +1,6 @@
-import { openAiStructuredGateway } from './llmGateway.js';
 import { getCareerInsightsPromptConfig } from './llmPromptRegistry.js';
+import { REFLECTIVE_CAREER_GUIDANCE_PROMPT } from './llmPromptGuidance.js';
+import { requestStructuredCompletionWithFallback, resolveBackupModel } from './llmStructuredFallback.js';
 
 export type InsightTier = 'free' | 'premium';
 
@@ -39,6 +40,7 @@ const MAX_INSIGHTS = 5;
 const FREE_SYSTEM_PROMPT = [
   'You are a pragmatic vocational astrology assistant for a career app.',
   'Use only the natal chart data provided by the user message.',
+  REFLECTIVE_CAREER_GUIDANCE_PROMPT,
   'Write clear, practical, non-fatalistic guidance.',
   'Do not mention health, legal, or guaranteed outcomes.',
   'Tone: concise, useful, motivating but realistic.',
@@ -59,6 +61,7 @@ const FREE_USER_PROMPT = [
 const PREMIUM_SYSTEM_PROMPT = [
   'You are a senior vocational astrology strategist for premium subscribers.',
   'Use only provided chart data and stay practical.',
+  REFLECTIVE_CAREER_GUIDANCE_PROMPT,
   'Provide deeper interpretation, blind spots, and strategic actions.',
   'No deterministic predictions. No health/legal/financial guarantees.',
   'Output only valid JSON that matches schema.',
@@ -171,31 +174,35 @@ export async function generateCareerInsights(input: {
   const config = getCareerInsightsPromptConfig(tier);
   const { promptVersion } = getInsightsConfig(tier);
   const prompt = promptForTier(tier);
-  const completion = await openAiStructuredGateway.requestStructuredCompletion({
-    feature: config.feature,
-    model: config.model,
-    promptVersion,
-    temperature: config.temperature,
-    maxTokens: config.maxTokens,
-    jsonSchema: OUTPUT_SCHEMA,
-    messages: [
-      { role: 'system', content: prompt.system },
-      {
-        role: 'user',
-        content: `${prompt.user}\n\nChart data JSON:\n${JSON.stringify(input.chartPayload)}`,
-      },
-    ],
-    timeoutMs: config.timeoutMs,
+  const completion = await requestStructuredCompletionWithFallback({
+    primaryEnabled: true,
+    backupModel: resolveBackupModel('career_insights'),
+    request: {
+      feature: config.feature,
+      model: config.model,
+      promptVersion,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      jsonSchema: OUTPUT_SCHEMA,
+      messages: [
+        { role: 'system', content: prompt.system },
+        {
+          role: 'user',
+          content: `${prompt.user}\n\nChart data JSON:\n${JSON.stringify(input.chartPayload)}`,
+        },
+      ],
+      timeoutMs: config.timeoutMs,
+    },
   });
 
-  const normalized = normalizeInsightsPayload(tier, completion.parsedContent);
+  const normalized = normalizeInsightsPayload(tier, completion.completion.parsedContent);
   if (!normalized) {
     throw new Error('OpenAI insights payload format is invalid');
   }
 
   return {
     insights: normalized,
-    model: config.model,
+    model: completion.model,
     promptVersion,
   };
 }

@@ -1,6 +1,6 @@
 # LLM Gateway - Current State
 **Status:** Active  
-**Last synced:** 2026-04-13
+**Last synced:** 2026-04-21
 
 ## Goal
 
@@ -51,9 +51,18 @@ Document the current shared transport layer for OpenAI-backed structured outputs
   - system/user prompt text
   - JSON schema body
   - domain normalization/validation of parsed payload
-  - fallback behavior when LLM is disabled or invalid
+- `llmStructuredFallback.ts` owns primary/backup structured completion routing and stable failure classification.
 - `llmTelemetry.ts` owns cost estimation and Mongo persistence for gateway events.
 - `src/services/llmEvals.test.ts` now guards the feature-owned normalizers with golden valid and invalid payload cases.
+- Runtime dashboard-facing endpoints avoid synchronous LLM waits where possible:
+  - `/api/astrology/daily-transit` uses cached AI Synergy by default and only generates it when `includeAiSynergy=true`; if narrative generation fails, score payload remains with `narrativeStatus=failed|unavailable`.
+  - `/api/astrology/career-vibe-plan?refresh=false` returns cached output first or a metrics-only `plan=null` payload with `narrativeStatus=pending`; premium narrative generation can complete in the background.
+  - `/api/notifications/interview-strategy-plan` returns deterministic slot explanations first; provider polish can run in the background and sets `explanationSource=llm` only on successful replacement.
+
+Template policy:
+- API responses must not surface fabricated template reports or narrative as successful provider output.
+- If all configured providers fail, feature services return a typed failure/status that the mobile client maps to user-facing copy.
+- Provider/model/source names stay in logs and technical surfaces, not production UI.
 
 ## Prompt Registry Scope
 
@@ -87,6 +96,13 @@ Current prompt registry entries:
 - AI synergy
 - Career Vibe plan
 
+Backup provider env:
+
+- `LLM_BACKUP_API_KEY`
+- `LLM_BACKUP_BASE_URL`
+- `LLM_BACKUP_MODEL` for shared default backup model
+- feature overrides: `LLM_BACKUP_AI_SYNERGY_MODEL`, `LLM_BACKUP_CAREER_INSIGHTS_MODEL`, `LLM_BACKUP_JOB_SCREENSHOT_MODEL`, `LLM_BACKUP_CAREER_VIBE_PLAN_MODEL`, `LLM_BACKUP_INTERVIEW_STRATEGY_MODEL`, `LLM_BACKUP_FULL_NATAL_ANALYSIS_MODEL`
+
 ## Not Implemented Yet
 
 - shared prompt template registry separate from service files
@@ -96,6 +112,7 @@ Current prompt registry entries:
 ## Related Files
 
 - `src/services/llmGateway.ts`
+- `src/services/llmStructuredFallback.ts`
 - `src/services/llmTelemetry.ts`
 - `src/services/llmPromptRegistry.ts`
 - `src/services/llmGateway.test.ts`

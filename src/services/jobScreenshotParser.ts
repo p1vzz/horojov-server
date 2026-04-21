@@ -1,7 +1,7 @@
 import { env } from '../config/env.js';
-import { openAiStructuredGateway } from './llmGateway.js';
 import { getJobScreenshotPromptConfig } from './llmPromptRegistry.js';
 import type { SupportedJobSource } from './jobUrl.js';
+import { requestStructuredCompletionWithFallback, resolveBackupModel } from './llmStructuredFallback.js';
 
 const MAX_REASON_LENGTH = 220;
 const MIN_DESCRIPTION_LENGTH = 80;
@@ -131,6 +131,11 @@ export type JobScreenshotParseResult = {
   };
   missingFields: string[];
   imageCount: number;
+};
+
+export type JobScreenshotParseGenerationResult = JobScreenshotParseResult & {
+  model: string;
+  promptVersion: string;
 };
 
 function asTrimmedString(value: unknown) {
@@ -348,24 +353,32 @@ export function getScreenshotParserConfig() {
   };
 }
 
-export async function parseJobFromScreenshots(input: { screenshots: string[] }) {
+export async function parseJobFromScreenshots(input: { screenshots: string[] }): Promise<JobScreenshotParseGenerationResult> {
   const preparedScreenshots = validateAndPrepareScreenshots(input.screenshots);
   const config = getJobScreenshotPromptConfig();
-  const completion = await openAiStructuredGateway.requestStructuredCompletion({
-    feature: config.feature,
-    model: config.model,
-    promptVersion: config.promptVersion,
-    temperature: config.temperature,
-    maxTokens: config.maxTokens,
-    jsonSchema: OUTPUT_SCHEMA,
-    messages: buildOpenAiMessages(preparedScreenshots),
-    timeoutMs: config.timeoutMs,
+  const completion = await requestStructuredCompletionWithFallback({
+    primaryEnabled: true,
+    backupModel: resolveBackupModel('job_screenshot'),
+    request: {
+      feature: config.feature,
+      model: config.model,
+      promptVersion: config.promptVersion,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      jsonSchema: OUTPUT_SCHEMA,
+      messages: buildOpenAiMessages(preparedScreenshots),
+      timeoutMs: config.timeoutMs,
+    },
   });
 
-  const normalized = normalizeParsePayload(completion.parsedContent);
+  const normalized = normalizeParsePayload(completion.completion.parsedContent);
   if (!normalized) {
     throw new Error('Screenshot parser payload format is invalid');
   }
 
-  return finalizeParseResult(normalized, preparedScreenshots.length);
+  return {
+    ...finalizeParseResult(normalized, preparedScreenshots.length),
+    model: completion.model,
+    promptVersion: config.promptVersion,
+  };
 }

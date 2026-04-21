@@ -5,9 +5,14 @@ import { requirePremiumAstrologyAuth } from './astrologyRouteGuards.js';
 import {
   fullNatalAnalysisQuerySchema,
   getOrCreateFullNatalAnalysisForUser,
+  getFullNatalAnalysisProgressForUser,
   morningBriefingQuerySchema,
 } from './astrologyShared.js';
 import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
+import {
+  FullNatalAnalysisGenerationError,
+  type FullNatalAnalysisGenerationFailureCode,
+} from '../fullNatalAnalysis.js';
 
 function handleMorningBriefingError(
   error: unknown,
@@ -33,34 +38,57 @@ function handleFullNatalAnalysisError(
   error: unknown,
   request: FastifyRequest,
   reply: FastifyReply,
-  mode: "build" | "regenerate",
 ) {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("Birth profile not found")) {
     return reply.code(404).send({
       error: "Birth profile not found. Complete onboarding first.",
+      code: "birth_profile_missing",
     });
   }
   if (message.includes("Natal chart not found")) {
     return reply
       .code(404)
-      .send({ error: "Natal chart not found. Generate chart first." });
+      .send({
+        error: "Natal chart not found. Generate chart first.",
+        code: "natal_chart_missing",
+      });
   }
-  if (message.includes("OpenAI API key is not configured")) {
-    return reply.code(500).send({ error: "OpenAI API key is not configured" });
+  if (error instanceof FullNatalAnalysisGenerationError) {
+    request.log.error(
+      { error, code: error.code },
+      "full natal analysis generation failed",
+    );
+    return reply.code(statusForFullNatalGenerationCode(error.code)).send({
+      error: "Full natal analysis generation failed.",
+      code: error.code,
+    });
   }
   request.log.error(
     { error },
-    mode === "build"
-      ? "full natal analysis request failed"
-      : "full natal analysis regenerate failed",
+    "full natal analysis request failed",
   );
   return reply.code(502).send({
-    error:
-      mode === "build"
-        ? "Unable to build full natal analysis"
-        : "Unable to regenerate full natal analysis",
+    error: "Unable to build full natal analysis",
+    code: "full_natal_analysis_failed",
   });
+}
+
+export function statusForFullNatalGenerationCode(code: FullNatalAnalysisGenerationFailureCode) {
+  switch (code) {
+    case "full_natal_llm_timeout":
+      return 504;
+    case "full_natal_llm_rate_limited":
+      return 503;
+    case "full_natal_llm_unavailable":
+    case "full_natal_llm_unconfigured":
+      return 503;
+    case "full_natal_llm_invalid_response":
+    case "full_natal_llm_upstream_error":
+      return 502;
+    default:
+      return 502;
+  }
 }
 
 export function registerAstrologyPremiumAnalysisRoutes(
@@ -105,28 +133,37 @@ export function registerAstrologyPremiumAnalysisRoutes(
     }
 
     try {
-      return await getOrCreateFullNatalAnalysisForUser({
+      const result = await getOrCreateFullNatalAnalysisForUser({
         userId: auth.user._id,
-        refresh: parsedQuery.data.refresh,
+        cacheOnly: parsedQuery.data.cacheOnly,
         logger: request.log,
       });
+      if (!result) {
+        return reply.code(404).send({
+          error: "Full natal analysis has not been generated yet.",
+          code: "full_natal_analysis_not_ready",
+        });
+      }
+      return result;
     } catch (error) {
-      return handleFullNatalAnalysisError(error, request, reply, "build");
+      return handleFullNatalAnalysisError(error, request, reply);
     }
   });
 
-  app.post("/full-natal-analysis/regenerate", async (request, reply) => {
+  app.get("/full-natal-analysis/progress", async (request, reply) => {
     const auth = await requirePremiumAstrologyAuth(request, reply, deps);
     if (!auth) return;
 
     try {
-      return await getOrCreateFullNatalAnalysisForUser({
+      return await getFullNatalAnalysisProgressForUser({
         userId: auth.user._id,
-        refresh: true,
-        logger: request.log,
       });
     } catch (error) {
-      return handleFullNatalAnalysisError(error, request, reply, "regenerate");
+      request.log.error({ error }, "full natal analysis progress request failed");
+      return reply.code(502).send({
+        error: "Unable to load full natal analysis progress",
+        code: "full_natal_progress_failed",
+      });
     }
   });
 }

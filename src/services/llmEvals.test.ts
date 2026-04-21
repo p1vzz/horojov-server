@@ -185,6 +185,13 @@ test('llm eval: interview strategy explanation normalizer rejects short copy and
     'Planetary currents are supportive here, giving you a calmer decision rhythm and clearer communication through the full interview window.'
   );
   assert.equal(normalizeInterviewStrategyExplanationFromLlm({ explanation: 'Too short to keep.' }), null);
+  assert.equal(
+    normalizeInterviewStrategyExplanationFromLlm({
+      explanation:
+        'Planetary currents rate this as an 88% interview window, giving you clear communication and calm delivery.',
+    }),
+    null
+  );
 });
 
 test('llm eval: full natal analysis normalizer accepts golden payload and enforces structural limits', () => {

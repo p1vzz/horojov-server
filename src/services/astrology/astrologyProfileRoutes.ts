@@ -9,12 +9,14 @@ import {
 import {
   aiSynergyHistoryQuerySchema,
   careerVibePlanQuerySchema,
+  dailyTransitQuerySchema,
   natalChartRequestSchema,
   upsertBirthProfile,
 } from './astrologyShared.js';
 import { requireAstrologyAuth } from './astrologyRouteGuards.js';
 import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
 import { getOrCreateCareerVibePlanForUser } from '../careerVibePlan.js';
+import { resetInterviewStrategyWindowAfterProfileChange } from '../interviewStrategy.js';
 
 export function registerAstrologyProfileRoutes(
   app: FastifyInstance,
@@ -62,7 +64,18 @@ export function registerAstrologyProfileRoutes(
       });
     }
 
-    await upsertBirthProfile(auth.user._id, parsed.data);
+    const collections = await getCollections();
+    const existingProfile = await collections.birthProfiles.findOne(
+      { userId: auth.user._id },
+      { projection: { profileHash: 1 } },
+    );
+    const profileHash = await upsertBirthProfile(auth.user._id, parsed.data);
+    if (existingProfile?.profileHash && existingProfile.profileHash !== profileHash) {
+      await resetInterviewStrategyWindowAfterProfileChange({
+        userId: auth.user._id,
+      });
+    }
+
     return {
       profile: {
         ...parsed.data,
@@ -74,11 +87,22 @@ export function registerAstrologyProfileRoutes(
     const auth = await requireAstrologyAuth(request, reply, deps);
     if (!auth) return;
 
+    const parsedQuery = dailyTransitQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      return reply.code(400).send({
+        error: "Invalid query parameters",
+        details: parsedQuery.error.flatten().fieldErrors,
+      });
+    }
+
     try {
       const result = await getOrCreateDailyTransitForUser(
         auth.user._id,
         buildTodayDate(),
         request.log,
+        {
+          aiSynergyMode: parsedQuery.data.includeAiSynergy ? "sync" : "cache-only",
+        },
       );
       return toDailyTransitResponse(result);
     } catch (error) {
@@ -112,6 +136,7 @@ export function registerAstrologyProfileRoutes(
         tier: auth.user.subscriptionTier === "premium" ? "premium" : "free",
         logger: request.log,
         refresh: parsedQuery.data.refresh,
+        llmMode: parsedQuery.data.refresh ? "sync" : "background",
       });
       return result.item;
     } catch (error) {

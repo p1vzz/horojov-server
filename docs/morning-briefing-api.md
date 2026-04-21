@@ -125,10 +125,11 @@ Career Vibe Plan errors:
 ## Data Derivation Rules
 - Reuse existing outputs from:
   - `getOrCreateDailyTransitForUser(...)`
-  - AI synergy generation/history logic
-- `career-vibe-plan` builds an action plan from the same deterministic daily transit + AI synergy inputs.
-- Premium `career-vibe-plan` may request an LLM rewrite only after deterministic metrics and peak window are built.
-- LLM output is schema-normalized and can only replace narrative plan text. Invalid output falls back to template copy.
+- cached AI synergy history when present
+- `career-vibe-plan` builds deterministic metrics from daily transit plus cached AI synergy when present; otherwise it derives the AI metric from transit metrics.
+- Premium `career-vibe-plan` may request provider narrative only after deterministic metrics and peak window are built.
+- For `refresh=false`, provider narrative is not awaited by the endpoint; new same-day payloads can remain `plan=null` with `narrativeStatus=pending` while background generation runs.
+- Provider output is schema-normalized and can only fill narrative plan text. Invalid output sets `plan=null` plus a typed failure status; no template copy is returned as a successful plan.
 - Do not introduce separate astrology computation paths for widget payload.
 - Keep payload deterministic per user + date key + algorithm version.
 
@@ -144,10 +145,10 @@ Implemented collections:
 Implemented indexes:
 - unique: `(userId, profileHash, dateKey, schemaVersion)`
 - helper: `(userId, dateKey desc)`
-- `career_vibe_daily` unique: `(userId, profileHash, dateKey, schemaVersion, tier, promptVersion, model)`
+- `career_vibe_daily` unique: `(userId, profileHash, dateKey, schemaVersion, tier, promptVersion)`
 - `career_vibe_daily` helper: `(userId, dateKey desc)`
 
 ## Compatibility Notes
 - Mobile widget should treat unknown fields as optional.
 - Any breaking field rename requires `schemaVersion` bump.
-- Existing `/api/astrology/daily-transit` remains unchanged.
+- Existing `/api/astrology/daily-transit` keeps the same response shape. By default it returns cached AI Synergy only; `includeAiSynergy=true` can request synchronous AI Synergy generation.

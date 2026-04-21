@@ -621,14 +621,6 @@ export async function registerNotificationRoutes(
         slotsPerWeek: parsed.data.slotsPerWeek,
       });
 
-      if (settings.enabled && settings.autoFillConfirmedAt) {
-        await deps.maybeRefillInterviewStrategyWindowForUser({
-          userId: auth.user._id,
-          logger: request.log,
-          source: 'bootstrap',
-        });
-      }
-
       return { settings };
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
@@ -668,12 +660,14 @@ export async function registerNotificationRoutes(
           userId: auth.user._id,
           logger: request.log,
           source: 'manual_refresh',
+          llmMode: 'background',
         });
       } else {
         await deps.maybeRefillInterviewStrategyWindowForUser({
           userId: auth.user._id,
           logger: request.log,
           source: 'bootstrap',
+          llmMode: 'background',
         });
       }
 
@@ -688,6 +682,9 @@ export async function registerNotificationRoutes(
       }
       if (message.includes('Natal chart not found')) {
         return reply.code(404).send({ error: 'Natal chart not found. Generate natal chart first.' });
+      }
+      if (message.includes('Daily transit data unavailable')) {
+        return reply.code(502).send({ error: 'Daily transit data unavailable for interview strategy generation.' });
       }
       request.log.error({ error }, 'failed to fetch interview strategy plan');
       return reply.code(502).send({ error: 'Unable to build interview strategy plan' });

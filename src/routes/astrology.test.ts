@@ -7,7 +7,13 @@ import {
   registerAstrologyRoutes,
   type AstrologyRouteDependencies,
 } from './astrology.js';
-import { discoverRolesQuerySchema } from '../services/astrology/astrologyShared.js';
+import {
+  careerVibePlanQuerySchema,
+  dailyTransitQuerySchema,
+  discoverRolesQuerySchema,
+  fullNatalAnalysisQuerySchema,
+} from '../services/astrology/astrologyShared.js';
+import { statusForFullNatalGenerationCode } from '../services/astrology/astrologyPremiumAnalysisRoutes.js';
 
 function buildFakeAuthContext(
   subscriptionTier: "free" | "premium",
@@ -65,7 +71,7 @@ test("astrology routes return 401 for unauthenticated requests", async () => {
       { method: "GET", url: "/api/astrology/career-vibe-plan" },
       { method: "GET", url: "/api/astrology/morning-briefing" },
       { method: "GET", url: "/api/astrology/full-natal-analysis" },
-      { method: "POST", url: "/api/astrology/full-natal-analysis/regenerate" },
+      { method: "GET", url: "/api/astrology/full-natal-analysis/progress" },
       { method: "GET", url: "/api/astrology/ai-synergy/history" },
       { method: "GET", url: "/api/astrology/career-insights" },
       { method: "GET", url: "/api/astrology/discover-roles" },
@@ -101,12 +107,12 @@ test("premium endpoints return 403 for free users", async () => {
     const routes = [
       "/api/astrology/morning-briefing",
       "/api/astrology/full-natal-analysis",
-      "/api/astrology/full-natal-analysis/regenerate",
+      "/api/astrology/full-natal-analysis/progress",
     ];
 
     for (const route of routes) {
       const response = await app.inject({
-        method: route.endsWith("/regenerate") ? "POST" : "GET",
+        method: "GET",
         url: route,
         headers: { authorization: "Bearer test" },
       });
@@ -184,4 +190,43 @@ test("discover roles query parses explicit false booleans as false", () => {
   assert.equal(deferred.refresh, true);
   assert.equal(deferred.deferSearchScores, true);
   assert.equal(deferred.scoreSlug, "registered-nurse");
+});
+
+test("runtime astrology query booleans do not coerce string false to true", () => {
+  const transit = dailyTransitQuerySchema.parse({
+    includeAiSynergy: "false",
+  });
+  assert.equal(transit.includeAiSynergy, false);
+
+  const transitWithSynergy = dailyTransitQuerySchema.parse({
+    includeAiSynergy: "true",
+  });
+  assert.equal(transitWithSynergy.includeAiSynergy, true);
+
+  const careerVibe = careerVibePlanQuerySchema.parse({
+    refresh: "false",
+  });
+  assert.equal(careerVibe.refresh, false);
+
+  const refreshedCareerVibe = careerVibePlanQuerySchema.parse({
+    refresh: "true",
+  });
+  assert.equal(refreshedCareerVibe.refresh, true);
+});
+
+test("full natal analysis query parses cache-only booleans explicitly", () => {
+  const parsed = fullNatalAnalysisQuerySchema.parse({
+    cacheOnly: "true",
+  });
+
+  assert.equal(parsed.cacheOnly, true);
+});
+
+test("full natal generation failure codes map to stable HTTP statuses", () => {
+  assert.equal(statusForFullNatalGenerationCode("full_natal_llm_timeout"), 504);
+  assert.equal(statusForFullNatalGenerationCode("full_natal_llm_rate_limited"), 503);
+  assert.equal(statusForFullNatalGenerationCode("full_natal_llm_unavailable"), 503);
+  assert.equal(statusForFullNatalGenerationCode("full_natal_llm_unconfigured"), 503);
+  assert.equal(statusForFullNatalGenerationCode("full_natal_llm_invalid_response"), 502);
+  assert.equal(statusForFullNatalGenerationCode("full_natal_llm_upstream_error"), 502);
 });

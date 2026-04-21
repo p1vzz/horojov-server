@@ -178,7 +178,9 @@ export type AiSynergyDailyDoc = {
   profileHash: string;
   dateKey: string;
   algorithmVersion: string;
-  narrativeSource: 'template' | 'llm';
+  narrativeSource: 'llm' | null;
+  narrativeStatus: 'ready' | 'pending' | 'unavailable' | 'failed';
+  narrativeFailureCode?: string | null;
   llmModel: string | null;
   llmPromptVersion: string | null;
   score: number;
@@ -193,9 +195,9 @@ export type AiSynergyDailyDoc = {
   actionsPriority?: string[];
   narrativeVariantId?: string;
   styleProfile?: string;
-  headline: string;
-  summary: string;
-  description: string;
+  headline: string | null;
+  summary: string | null;
+  description: string | null;
   recommendations: string[];
   generatedAt: Date;
   createdAt: Date;
@@ -241,10 +243,12 @@ export type CareerVibeDailyDoc = {
   tier: 'free' | 'premium';
   model: string;
   promptVersion: string;
-  narrativeSource: 'template' | 'llm';
+  narrativeSource: 'llm' | null;
+  narrativeStatus: 'ready' | 'pending' | 'unavailable' | 'failed';
+  narrativeFailureCode?: string | null;
   modeLabel: string;
   metrics: CareerVibePlanMetricsDoc;
-  plan: CareerVibePlanContentDoc;
+  plan: CareerVibePlanContentDoc | null;
   explanation: CareerVibePlanExplanationDoc;
   sources: {
     dailyTransitDateKey: string;
@@ -284,7 +288,7 @@ export type MorningBriefingDailyDoc = {
       cautions: string[];
       tags: AlgorithmTagDoc[];
     };
-    aiSynergy: {
+    aiSynergy?: {
       algorithmVersion: string;
       band: 'peak' | 'strong' | 'stable' | 'volatile';
       confidence: number;
@@ -360,7 +364,7 @@ export type FullNatalCareerAnalysisDoc = {
   profileHash: string;
   promptVersion: string;
   model: string;
-  narrativeSource: 'template' | 'llm';
+  narrativeSource: 'llm';
   analysis: FullNatalCareerAnalysisPayloadDoc;
   generatedAt: Date;
   createdAt: Date;
@@ -714,6 +718,7 @@ export type InterviewStrategySlotDoc = {
   timezoneIana: string;
   score: number;
   explanation: string;
+  explanationSource: 'deterministic' | 'llm';
   calendarNote?: string;
   breakdown: InterviewStrategyScoreBreakdownDoc;
   algorithmVersion: InterviewStrategyAlgorithmVersion;
@@ -850,7 +855,7 @@ export async function ensureMongoIndexes() {
       await collections.aiSynergyDaily.createIndex({ userId: 1, profileHash: 1, dateKey: -1, updatedAt: -1 });
       await collections.aiSynergyDaily.createIndex({ userId: 1, dateKey: -1 });
       await collections.careerVibeDaily.createIndex(
-        { userId: 1, profileHash: 1, dateKey: 1, schemaVersion: 1, tier: 1, promptVersion: 1, model: 1 },
+        { userId: 1, profileHash: 1, dateKey: 1, schemaVersion: 1, tier: 1, promptVersion: 1 },
         { unique: true }
       );
       await collections.careerVibeDaily.createIndex({ userId: 1, dateKey: -1 });
@@ -860,7 +865,7 @@ export async function ensureMongoIndexes() {
       );
       await collections.morningBriefingDaily.createIndex({ userId: 1, dateKey: -1 });
       await collections.fullNatalCareerAnalysis.createIndex(
-        { userId: 1, profileHash: 1, promptVersion: 1, model: 1 },
+        { userId: 1, profileHash: 1, promptVersion: 1 },
         { unique: true }
       );
       await collections.fullNatalCareerAnalysis.createIndex({ userId: 1, updatedAt: -1 });

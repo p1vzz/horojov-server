@@ -40,7 +40,7 @@ export type MorningBriefingView = {
       cautions: string[];
       tags: AlgorithmTagDoc[];
     };
-    aiSynergy: {
+    aiSynergy?: {
       algorithmVersion: string;
       band: 'peak' | 'strong' | 'stable' | 'volatile';
       confidence: number;
@@ -76,16 +76,16 @@ function clampScore(value: number) {
   return Math.max(10, Math.min(99, Math.round(value)));
 }
 
-function deriveFallbackAiSynergy(metrics: { energy: number; focus: number; luck: number }) {
+function deriveBaselineAiSynergyScore(metrics: { energy: number; focus: number; luck: number }) {
   const weighted = metrics.energy * 0.34 + metrics.focus * 0.44 + metrics.luck * 0.22;
   const coherenceBoost = (metrics.focus - metrics.energy) * 0.06;
   return clampScore(weighted + coherenceBoost);
 }
 
-function buildStaleAfter(dateKey: string, fallbackBase: Date) {
+function buildStaleAfter(dateKey: string, referenceBase: Date) {
   const midnightUtc = new Date(`${dateKey}T00:00:00.000Z`);
   if (Number.isNaN(midnightUtc.getTime())) {
-    return new Date(fallbackBase.getTime() + 24 * 60 * 60 * 1000);
+    return new Date(referenceBase.getTime() + 24 * 60 * 60 * 1000);
   }
   midnightUtc.setUTCDate(midnightUtc.getUTCDate() + 1);
   return midnightUtc;
@@ -147,37 +147,16 @@ export async function getOrCreateMorningBriefingForUser(input: {
     }
   }
 
-  const transit = await getOrCreateDailyTransitForUser(input.userId, input.date, input.logger);
+  const transit = await getOrCreateDailyTransitForUser(input.userId, input.date, input.logger, {
+    aiSynergyMode: 'cache-only',
+  });
   const now = new Date();
 
   const energy = clampScore(transit.doc.vibe.metrics.energy);
   const focus = clampScore(transit.doc.vibe.metrics.focus);
   const luck = clampScore(transit.doc.vibe.metrics.luck);
-  const aiSynergy = transit.aiSynergy?.score ?? deriveFallbackAiSynergy({ energy, focus, luck });
-  const aiBand = transit.aiSynergy?.band ?? (aiSynergy >= 88 ? 'peak' : aiSynergy >= 76 ? 'strong' : aiSynergy >= 64 ? 'stable' : 'volatile');
-  const aiConfidence = transit.aiSynergy?.confidence ?? clampScore(54 + (focus - Math.abs(energy - luck)) * 0.4);
-  const aiConfidenceBreakdown: AiSynergyConfidenceBreakdownDoc =
-    transit.aiSynergy?.confidenceBreakdown ?? {
-      dataQuality: aiConfidence,
-      coherence: aiConfidence,
-      stability: aiConfidence,
-    };
-  const aiDrivers = transit.aiSynergy?.drivers ?? [
-    'Fallback AI synergy was derived from core transit metrics.',
-    'Focus-weighted coherence contributed most to today\'s AI alignment.',
-    'Use explicit review gates for high-impact outputs.',
-  ];
-  const aiCautions = transit.aiSynergy?.cautions ?? [
-    'Fallback mode has lower signal richness than full synergy pipeline.',
-    'Validate generated outputs before external sharing.',
-    'Avoid broad prompts when execution pressure is high.',
-  ];
-  const aiActionsPriority = transit.aiSynergy?.actionsPriority ?? [
-    'Start with one bounded automation block.',
-    'Convert outputs into explicit next actions.',
-    'Schedule a final human approval checkpoint.',
-  ];
-  const aiTags = transit.aiSynergy?.tags ?? [];
+  const readyAiSynergy = transit.aiSynergy?.narrativeStatus === 'ready' ? transit.aiSynergy : null;
+  const aiSynergy = transit.aiSynergy?.score ?? deriveBaselineAiSynergyScore({ energy, focus, luck });
   const vibeDrivers = transit.doc.vibe.drivers ?? [];
   const vibeCautions = transit.doc.vibe.cautions ?? [];
   const vibeTags = transit.doc.vibe.tags ?? [];
@@ -191,6 +170,8 @@ export async function getOrCreateMorningBriefingForUser(input: {
       staleAfter,
       transitVibe: transit.doc.vibe,
       aiSynergy: transit.aiSynergy,
+      narrativeStatus: 'unavailable',
+      narrativeFailureCode: 'llm_unavailable',
       sources: {
         dailyTransitDateKey: transit.doc.dateKey,
         aiSynergyDateKey: transit.aiSynergy?.dateKey ?? null,
@@ -206,8 +187,8 @@ export async function getOrCreateMorningBriefingForUser(input: {
     profileHash: profile.profileHash,
     dateKey,
     schemaVersion: MORNING_BRIEFING_SCHEMA_VERSION,
-    headline: transit.aiSynergy?.headline?.trim() || transit.doc.vibe.title,
-    summary: transit.aiSynergy?.summary?.trim() || transit.doc.vibe.summary,
+    headline: readyAiSynergy?.headline?.trim() || transit.doc.vibe.title,
+    summary: readyAiSynergy?.summary?.trim() || transit.doc.vibe.summary,
     modeLabel: transit.doc.vibe.modeLabel,
     metrics: {
       energy,
@@ -215,7 +196,7 @@ export async function getOrCreateMorningBriefingForUser(input: {
       luck,
       aiSynergy: clampScore(aiSynergy),
     },
-    plan: planSnapshot,
+    plan: planSnapshot ?? undefined,
     insights: {
       vibe: {
         algorithmVersion: transit.doc.vibe.algorithmVersion,
@@ -223,18 +204,20 @@ export async function getOrCreateMorningBriefingForUser(input: {
         cautions: vibeCautions,
         tags: vibeTags,
       },
-      aiSynergy: {
-        algorithmVersion: transit.aiSynergy?.algorithmVersion ?? 'ai-synergy-fallback-v2',
-        band: aiBand,
-        confidence: aiConfidence,
-        confidenceBreakdown: aiConfidenceBreakdown,
-        drivers: aiDrivers,
-        cautions: aiCautions,
-        actionsPriority: aiActionsPriority,
-        tags: aiTags,
-        narrativeVariantId: transit.aiSynergy?.narrativeVariantId ?? 'fallback-stable-00',
-        styleProfile: transit.aiSynergy?.styleProfile ?? 'analytical',
-      },
+      aiSynergy: transit.aiSynergy
+        ? {
+            algorithmVersion: transit.aiSynergy.algorithmVersion,
+            band: transit.aiSynergy.band,
+            confidence: transit.aiSynergy.confidence,
+            confidenceBreakdown: transit.aiSynergy.confidenceBreakdown,
+            drivers: transit.aiSynergy.drivers,
+            cautions: transit.aiSynergy.cautions,
+            actionsPriority: transit.aiSynergy.actionsPriority,
+            tags: transit.aiSynergy.tags,
+            narrativeVariantId: transit.aiSynergy.narrativeVariantId,
+            styleProfile: transit.aiSynergy.styleProfile,
+          }
+        : undefined,
     },
     sources: {
       dailyTransitDateKey: transit.doc.dateKey,

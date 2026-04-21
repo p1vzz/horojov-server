@@ -10,10 +10,12 @@ import {
   type InterviewStrategySlotSource,
 } from '../db/mongo.js';
 import { getOrCreateDailyTransitForUser } from './dailyTransit.js';
-import { openAiStructuredGateway } from './llmGateway.js';
 import { getInterviewStrategyPromptConfig } from './llmPromptRegistry.js';
+import { REFLECTIVE_CAREER_GUIDANCE_PROMPT } from './llmPromptGuidance.js';
+import { requestStructuredCompletionWithFallback, resolveBackupModel } from './llmStructuredFallback.js';
 
 export const INTERVIEW_STRATEGY_ALGORITHM_VERSION: InterviewStrategyAlgorithmVersion = 'interview-strategy-v1';
+export type InterviewStrategyLlmMode = 'sync' | 'background' | 'off';
 
 export type InterviewStrategySettingsView = {
   enabled: boolean;
@@ -43,6 +45,7 @@ export type InterviewStrategySlotView = {
   timezoneIana: string;
   score: number;
   explanation: string;
+  explanationSource: 'deterministic' | 'llm';
   calendarNote: string;
   breakdown: InterviewStrategyScoreBreakdownView;
 };
@@ -91,6 +94,7 @@ const INTERVIEW_STRATEGY_GOLD_SCORE = 80;
 const INTERVIEW_STRATEGY_GREEN_SCORE = 90;
 const INTERVIEW_STRATEGY_MONTHLY_SLOT_TARGET = 5;
 const INTERVIEW_STRATEGY_MONTHLY_SLOT_SPACING_DAYS = 3;
+const INTERVIEW_STRATEGY_ZERO_RESULT_SAFETY_MIN_SCORE = 62;
 const INTERVIEW_STRATEGY_DEFAULT_RANGE_START_MINUTE = 9 * 60;
 const INTERVIEW_STRATEGY_DEFAULT_RANGE_END_MINUTE = 18 * 60;
 const INTERVIEW_STRATEGY_FIXED_ALLOWED_WEEKDAYS = [1, 2, 3, 4, 5];
@@ -124,7 +128,7 @@ const INTERVIEW_HOUSE_PEAK_HOURS: Record<number, number> = {
   11: 15,
 };
 
-const GOLD_SLOT_FALLBACK_VARIANTS = [
+const GOLD_SLOT_EXPLANATION_VARIANTS = [
   'Planetary currents are quietly supportive, making this window ideal for clear answers and steady confidence.',
   'The sky pattern leans cooperative here, so your communication can land with more ease and precision.',
   'This period carries a smooth cosmic rhythm that supports focused thinking and polished self-presentation.',
@@ -139,10 +143,11 @@ const GOLD_SLOT_FALLBACK_VARIANTS = [
 
 const INTERVIEW_STRATEGY_LLM_SYSTEM_PROMPT = [
   'You are a concise career astrology assistant.',
-  'You receive deterministic slot scores and transit context.',
+  'You receive qualitative interview timing signals and transit context.',
   'Write one polished explanation for why this interview slot is favorable.',
+  REFLECTIVE_CAREER_GUIDANCE_PROMPT,
   'No guarantees, no absolute claims, no medical/legal/financial advice.',
-  'Do not change provided numbers.',
+  'Do not include scores, percentages, numeric ratings, or certainty claims.',
   'Output strict JSON only.',
 ].join(' ');
 
@@ -153,6 +158,7 @@ const INTERVIEW_STRATEGY_LLM_USER_PROMPT = [
   '- Mention why this date/time window is favorable.',
   '- Keep tone elegant but practical.',
   '- Avoid mystic overload and avoid emojis.',
+  '- Do not mention scores, percentages, or numeric ratings.',
   '- 1-2 sentences only.',
 ].join('\n');
 
@@ -177,6 +183,7 @@ export type GeneratedInterviewSlot = {
   timezoneIana: string;
   score: number;
   explanation: string;
+  explanationSource: 'deterministic' | 'llm';
   calendarNote: string;
   breakdown: InterviewStrategyScoreBreakdownDoc;
 };
@@ -749,14 +756,14 @@ function buildExplanation(input: {
   return core.length > 0 ? core : 'balanced window for focused interviews';
 }
 
-function buildGoldFallbackExplanation(input: {
+function buildGoldSlotExplanation(input: {
   userId: ObjectId;
   dateKey: string;
   slotId: string;
 }) {
   return pickBySeed(
-    GOLD_SLOT_FALLBACK_VARIANTS,
-    `${input.userId.toHexString()}:${input.dateKey}:${input.slotId}:gold-fallback`
+    GOLD_SLOT_EXPLANATION_VARIANTS,
+    `${input.userId.toHexString()}:${input.dateKey}:${input.slotId}:gold-explanation`
   );
 }
 
@@ -764,6 +771,13 @@ function truncateSentence(value: string, maxLength: number) {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (normalized.length <= maxLength) return normalized;
   return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}.`;
+}
+
+function describeCareerHouseEmphasis(score: number) {
+  if (score >= 82) return 'especially supportive';
+  if (score >= 72) return 'supportive';
+  if (score >= 62) return 'steady';
+  return 'mild';
 }
 
 function buildSlotExplanation(input: {
@@ -779,13 +793,13 @@ function buildSlotExplanation(input: {
       ? ` Keep answers concise because ${input.signal.pressureLabel.toLowerCase()} adds pressure.`
       : '';
     return truncateSentence(
-      `${input.signal.bestAspectLabel} supports clear interview presence while career-house emphasis is ${input.breakdown.careerHouseScore ?? input.signal.careerHouseScore}%.${pressureClause}`,
+      `${input.signal.bestAspectLabel} supports clear interview presence while career timing looks ${describeCareerHouseEmphasis(input.breakdown.careerHouseScore ?? input.signal.careerHouseScore)}.${pressureClause}`,
       240
     );
   }
 
   if (input.score >= INTERVIEW_STRATEGY_GOLD_SCORE) {
-    return buildGoldFallbackExplanation({
+    return buildGoldSlotExplanation({
       userId: input.userId,
       dateKey: input.dateKey,
       slotId: input.slotId,
@@ -803,11 +817,10 @@ function buildSlotExplanation(input: {
 function buildCalendarNote(input: {
   explanation: string;
   signal: TransitNatalSignal;
-  score: number;
 }) {
   const driver = input.signal.bestAspectLabel ?? 'Natal-transit timing';
   const pressure = input.signal.pressureLabel ? ` Watch ${input.signal.pressureLabel.toLowerCase()}.` : '';
-  return truncateSentence(`${driver}: ${input.score}% interview window. ${input.explanation}${pressure}`, 220);
+  return truncateSentence(`${driver} supports this interview window. ${input.explanation}${pressure}`, 220);
 }
 
 export function normalizeInterviewStrategyExplanationFromLlm(raw: unknown) {
@@ -816,6 +829,7 @@ export function normalizeInterviewStrategyExplanationFromLlm(raw: unknown) {
   if (typeof payload.explanation !== 'string') return null;
   const explanation = payload.explanation.replace(/\s+/g, ' ').trim();
   if (explanation.length < 60) return null;
+  if (/\d|%/.test(explanation)) return null;
   return explanation;
 }
 
@@ -873,7 +887,9 @@ async function maybeLoadTransitPromptContext(input: {
   }
 
   try {
-    const transit = await getOrCreateDailyTransitForUser(input.userId, transitDate, input.logger);
+    const transit = await getOrCreateDailyTransitForUser(input.userId, transitDate, input.logger, {
+      includeAiSynergy: false,
+    });
     const vibe = transit.doc.vibe;
     const context: InterviewStrategyTransitPromptContext = {
       title: vibe.title,
@@ -932,18 +948,21 @@ async function requestInterviewStrategyExplanationFromLlm(input: {
     minute: '2-digit',
   }).format(input.slot.endAt);
 
-  const completion = await openAiStructuredGateway.requestStructuredCompletion({
-    feature: config.feature,
-    model,
-    promptVersion,
-    temperature: config.temperature,
-    maxTokens: config.maxTokens,
-    jsonSchema: INTERVIEW_STRATEGY_LLM_SCHEMA,
-    messages: [
-      { role: 'system', content: INTERVIEW_STRATEGY_LLM_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: `${INTERVIEW_STRATEGY_LLM_USER_PROMPT}
+  const completion = await requestStructuredCompletionWithFallback({
+    primaryEnabled: env.OPENAI_INTERVIEW_STRATEGY_ENABLED,
+    backupModel: resolveBackupModel('interview_strategy'),
+    request: {
+      feature: config.feature,
+      model,
+      promptVersion,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      jsonSchema: INTERVIEW_STRATEGY_LLM_SCHEMA,
+      messages: [
+        { role: 'system', content: INTERVIEW_STRATEGY_LLM_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: `${INTERVIEW_STRATEGY_LLM_USER_PROMPT}
 
 Context JSON:
 ${JSON.stringify(
@@ -954,22 +973,21 @@ ${JSON.stringify(
       dateLabel: slotDateLabel,
       timeWindow: `${slotStartLabel} - ${slotEndLabel}`,
       timezoneIana: input.slot.timezoneIana,
-      score: input.slot.score,
-      band: slotBand,
-      breakdown: input.slot.breakdown,
+      timingBand: slotBand,
     },
     transit: input.transitContext,
-    deterministicDraft: input.slot.explanation,
+    algorithmicExplanation: input.slot.explanation,
   },
   null,
   0
 )}`,
-      },
-    ],
-    timeoutMs: config.timeoutMs,
+        },
+      ],
+      timeoutMs: config.timeoutMs,
+    },
   });
 
-  const parsed = normalizeInterviewStrategyExplanationFromLlm(completion.parsedContent);
+  const parsed = normalizeInterviewStrategyExplanationFromLlm(completion.completion.parsedContent);
   if (!parsed) {
     throw new Error('OpenAI interview strategy payload format is invalid');
   }
@@ -983,8 +1001,8 @@ async function maybeEnhanceSlotExplanationsWithLlm(input: {
   slots: GeneratedInterviewSlot[];
   logger: FastifyBaseLogger;
 }) {
-  if (!env.OPENAI_INTERVIEW_STRATEGY_ENABLED) return 0;
-  if (!env.OPENAI_API_KEY) return 0;
+  const backupConfigured = Boolean(env.LLM_BACKUP_API_KEY && env.LLM_BACKUP_BASE_URL && resolveBackupModel('interview_strategy'));
+  if (!(env.OPENAI_INTERVIEW_STRATEGY_ENABLED && env.OPENAI_API_KEY) && !backupConfigured) return 0;
 
   const candidates = selectSlotsForLlmEnhancement(input.slots);
   if (candidates.length === 0) return 0;
@@ -1017,6 +1035,7 @@ async function maybeEnhanceSlotExplanationsWithLlm(input: {
         {
           $set: {
             explanation: nextExplanation,
+            explanationSource: 'llm',
             updatedAt: new Date(),
           },
         }
@@ -1024,6 +1043,7 @@ async function maybeEnhanceSlotExplanationsWithLlm(input: {
 
       if (updateResult.modifiedCount > 0) {
         slot.explanation = nextExplanation;
+        slot.explanationSource = 'llm';
         enhanced += 1;
       }
     } catch (error) {
@@ -1040,6 +1060,29 @@ async function maybeEnhanceSlotExplanationsWithLlm(input: {
   }
 
   return enhanced;
+}
+
+function enhanceSlotExplanationsInBackground(input: {
+  collections: Awaited<ReturnType<typeof getCollections>>;
+  userId: ObjectId;
+  slots: GeneratedInterviewSlot[];
+  logger: FastifyBaseLogger;
+}) {
+  void maybeEnhanceSlotExplanationsWithLlm(input)
+    .then((enhancedCount) => {
+      if (enhancedCount > 0) {
+        input.logger.info(
+          { userId: input.userId.toHexString(), enhancedCount },
+          'interview strategy background llm explanations updated'
+        );
+      }
+    })
+    .catch((error) => {
+      input.logger.warn(
+        { error, userId: input.userId.toHexString() },
+        'interview strategy background llm explanations skipped'
+      );
+    });
 }
 
 async function loadNatalChartForActiveProfile(input: {
@@ -1085,14 +1128,24 @@ export function selectInterviewStrategySlotsForRange(input: {
   candidates: GeneratedInterviewSlot[];
   rangeDays: number;
   minScore: number;
+  zeroResultSafetyMinScore?: number;
 }): InterviewStrategySelectedSlot[] {
-  const target = resolveInterviewStrategySlotTarget(input.rangeDays);
+  let target = resolveInterviewStrategySlotTarget(input.rangeDays);
   const sorted = [...input.candidates].sort((left, right) => {
     if (right.score !== left.score) return right.score - left.score;
     return left.startAt.getTime() - right.startAt.getTime();
   });
   const qualified = sorted.filter((slot) => slot.score >= input.minScore);
-  const pool = qualified;
+  let pool = qualified;
+  const zeroResultSafetyMinScore = input.zeroResultSafetyMinScore;
+  if (
+    pool.length === 0 &&
+    typeof zeroResultSafetyMinScore === 'number' &&
+    zeroResultSafetyMinScore < input.minScore
+  ) {
+    pool = sorted.filter((slot) => slot.score >= zeroResultSafetyMinScore);
+    target = Math.min(target, 1);
+  }
   const selected: GeneratedInterviewSlot[] = [];
   const selectedDateKeys = new Set<string>();
 
@@ -1177,6 +1230,7 @@ function toSlotView(doc: InterviewStrategySlotDoc): InterviewStrategySlotView {
     score: doc.score,
     explanation: doc.explanation,
     calendarNote: doc.calendarNote ?? doc.explanation,
+    explanationSource: doc.explanationSource ?? 'deterministic',
     breakdown: doc.breakdown,
   };
 }
@@ -1209,6 +1263,17 @@ function buildWeeks(slots: InterviewStrategySlotView[], slotsPerWeek: number): I
 
   weeks.sort((left, right) => left.weekStartAt.localeCompare(right.weekStartAt));
   return weeks;
+}
+
+async function deleteExpiredInterviewStrategySlotsForUser(input: {
+  collections: Awaited<ReturnType<typeof getCollections>>;
+  userId: ObjectId;
+  todayDateKey: string;
+}) {
+  await input.collections.interviewStrategySlots.deleteMany({
+    userId: input.userId,
+    dateKey: { $lt: input.todayDateKey },
+  });
 }
 
 export async function getInterviewStrategySettingsDocForUser(userId: ObjectId) {
@@ -1283,6 +1348,7 @@ async function generateSlotsForRange(input: {
   untilDateKey: string;
   source: InterviewStrategySlotSource;
   logger: FastifyBaseLogger;
+  llmMode?: InterviewStrategyLlmMode;
 }): Promise<InterviewStrategyGenerationResult> {
   const collections = await getCollections();
   const now = new Date();
@@ -1299,6 +1365,7 @@ async function generateSlotsForRange(input: {
   let generated = 0;
   let updated = 0;
   let skipped = 0;
+  let transitFailures = 0;
   const candidateSlots: GeneratedInterviewSlot[] = [];
   const rangeDays = daysBetweenDateKeys(input.fromDateKey, input.untilDateKey) + 1;
 
@@ -1319,7 +1386,26 @@ async function generateSlotsForRange(input: {
       continue;
     }
 
-    const transit = await getOrCreateDailyTransitForUser(input.userId, transitDate, input.logger);
+    let transit: Awaited<ReturnType<typeof getOrCreateDailyTransitForUser>>;
+    try {
+      transit = await getOrCreateDailyTransitForUser(input.userId, transitDate, input.logger, {
+        includeAiSynergy: false,
+      });
+    } catch (error) {
+      transitFailures += 1;
+      skipped += 1;
+      input.logger.warn(
+        {
+          error,
+          userId: input.userId.toHexString(),
+          dateKey,
+        },
+        'interview strategy daily transit skipped'
+      );
+      cursor = shiftLocalDay(cursor, 1);
+      continue;
+    }
+
     if (transit.doc.profileHash !== natal.profileHash) {
       skipped += 1;
       cursor = shiftLocalDay(cursor, 1);
@@ -1424,7 +1510,6 @@ async function generateSlotsForRange(input: {
     const calendarNote = buildCalendarNote({
       explanation,
       signal,
-      score,
     });
 
     candidateSlots.push({
@@ -1435,6 +1520,7 @@ async function generateSlotsForRange(input: {
       timezoneIana: input.settings.timezoneIana,
       score,
       explanation,
+      explanationSource: 'deterministic',
       calendarNote,
       breakdown,
     });
@@ -1442,10 +1528,15 @@ async function generateSlotsForRange(input: {
     cursor = shiftLocalDay(cursor, 1);
   }
 
+  if (candidateSlots.length === 0 && transitFailures > 0) {
+    throw new Error('Daily transit data unavailable for interview strategy generation');
+  }
+
   const generatedSlots = selectInterviewStrategySlotsForRange({
     candidates: candidateSlots,
     rangeDays,
     minScore: env.INTERVIEW_STRATEGY_MIN_SCORE,
+    zeroResultSafetyMinScore: INTERVIEW_STRATEGY_ZERO_RESULT_SAFETY_MIN_SCORE,
   });
   skipped += Math.max(0, candidateSlots.length - generatedSlots.length);
 
@@ -1464,6 +1555,7 @@ async function generateSlotsForRange(input: {
           timezoneIana: slot.timezoneIana,
           score: slot.score,
           explanation: slot.explanation,
+          explanationSource: slot.explanationSource,
           calendarNote: slot.calendarNote,
           breakdown: slot.breakdown,
           algorithmVersion: INTERVIEW_STRATEGY_ALGORITHM_VERSION,
@@ -1487,13 +1579,23 @@ async function generateSlotsForRange(input: {
     }
   }
 
-  const llmEnhancedCount = await maybeEnhanceSlotExplanationsWithLlm({
-    collections,
-    userId: input.userId,
-    slots: generatedSlots,
-    logger: input.logger,
-  });
-  updated += llmEnhancedCount;
+  const llmMode = input.llmMode ?? 'sync';
+  if (llmMode === 'sync') {
+    const llmEnhancedCount = await maybeEnhanceSlotExplanationsWithLlm({
+      collections,
+      userId: input.userId,
+      slots: generatedSlots,
+      logger: input.logger,
+    });
+    updated += llmEnhancedCount;
+  } else if (llmMode === 'background') {
+    enhanceSlotExplanationsInBackground({
+      collections,
+      userId: input.userId,
+      slots: generatedSlots,
+      logger: input.logger,
+    });
+  }
 
   return {
     generated,
@@ -1513,6 +1615,7 @@ export async function rebuildInterviewStrategyWindowForUser(input: {
   now?: Date;
   source: InterviewStrategySlotSource;
   horizonDays?: number;
+  llmMode?: InterviewStrategyLlmMode;
 }) {
   const now = input.now ?? new Date();
   const collections = await getCollections();
@@ -1530,6 +1633,12 @@ export async function rebuildInterviewStrategyWindowForUser(input: {
   const fromDateKey = localDateKey(todayParts);
   const untilDateKey = localDateKey(untilParts);
 
+  await deleteExpiredInterviewStrategySlotsForUser({
+    collections,
+    userId: input.userId,
+    todayDateKey: fromDateKey,
+  });
+
   await collections.interviewStrategySlots.deleteMany({
     userId: input.userId,
     dateKey: { $gte: fromDateKey },
@@ -1542,6 +1651,7 @@ export async function rebuildInterviewStrategyWindowForUser(input: {
     untilDateKey,
     source: input.source,
     logger: input.logger,
+    llmMode: input.llmMode,
   });
 
   await collections.interviewStrategySettings.updateOne(
@@ -1566,6 +1676,7 @@ export async function maybeRefillInterviewStrategyWindowForUser(input: {
   thresholdDays?: number;
   refillDays?: number;
   settingsDoc?: InterviewStrategySettingsDoc | null;
+  llmMode?: InterviewStrategyLlmMode;
 }) {
   const now = input.now ?? new Date();
   const collections = await getCollections();
@@ -1580,12 +1691,19 @@ export async function maybeRefillInterviewStrategyWindowForUser(input: {
   }
 
   const todayDateKey = localDateKey(startOfLocalDayNow(now, settings.timezoneIana));
+  await deleteExpiredInterviewStrategySlotsForUser({
+    collections,
+    userId: input.userId,
+    todayDateKey,
+  });
+
   if (!settings.filledUntilDateKey) {
     const initial = await rebuildInterviewStrategyWindowForUser({
       userId: input.userId,
       logger: input.logger,
       now,
       source: 'bootstrap',
+      llmMode: input.llmMode,
     });
     return {
       status: 'generated' as const,
@@ -1612,6 +1730,7 @@ export async function maybeRefillInterviewStrategyWindowForUser(input: {
       logger: input.logger,
       now,
       source: 'bootstrap',
+      llmMode: input.llmMode,
     });
     return {
       status: 'generated' as const,
@@ -1631,6 +1750,7 @@ export async function maybeRefillInterviewStrategyWindowForUser(input: {
     untilDateKey,
     source: input.source,
     logger: input.logger,
+    llmMode: input.llmMode,
   });
 
   await collections.interviewStrategySettings.updateOne(
@@ -1651,6 +1771,41 @@ export async function maybeRefillInterviewStrategyWindowForUser(input: {
   };
 }
 
+export async function resetInterviewStrategyWindowAfterProfileChange(input: {
+  userId: ObjectId;
+  now?: Date;
+}) {
+  const collections = await getCollections();
+  const now = input.now ?? new Date();
+  const settings = await collections.interviewStrategySettings.findOne({ userId: input.userId });
+  const timezoneIana = settings?.timezoneIana ?? DEFAULT_SETTINGS.timezoneIana;
+  const todayDateKey = localDateKey(startOfLocalDayNow(now, timezoneIana));
+
+  const [slotResult] = await Promise.all([
+    collections.interviewStrategySlots.deleteMany({
+      userId: input.userId,
+      dateKey: { $gte: todayDateKey },
+    }),
+    settings
+      ? collections.interviewStrategySettings.updateOne(
+          { userId: input.userId },
+          {
+            $set: {
+              filledUntilDateKey: null,
+              lastGeneratedAt: null,
+              updatedAt: now,
+            },
+          }
+        )
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    deletedSlots: slotResult.deletedCount,
+    resetAt: now,
+  };
+}
+
 export async function fetchInterviewStrategyPlanForUser(input: {
   userId: ObjectId;
   now?: Date;
@@ -1664,6 +1819,14 @@ export async function fetchInterviewStrategyPlanForUser(input: {
   const startDateKey = localDateKey(startOfLocalDayNow(now, timezoneIana));
   const horizonDays = clamp(Math.trunc(input.horizonDays ?? env.INTERVIEW_STRATEGY_INITIAL_HORIZON_DAYS), 7, 90);
   const endDateKey = localDateKey(shiftLocalDay(parseDateKey(startDateKey) ?? startOfLocalDayNow(now, timezoneIana), horizonDays - 1));
+
+  if (settingsDoc) {
+    await deleteExpiredInterviewStrategySlotsForUser({
+      collections,
+      userId: input.userId,
+      todayDateKey: startDateKey,
+    });
+  }
 
   const slotDocs = settingsDoc
     ? await collections.interviewStrategySlots

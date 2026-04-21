@@ -11,7 +11,7 @@ import {
   type AlgorithmTagDoc,
   type MongoCollections,
 } from '../db/mongo.js';
-import { getOrCreateAiSynergyForDay, type AiSynergyView } from './aiSynergy.js';
+import { getCachedAiSynergyForDay, getOrCreateAiSynergyForDay, type AiSynergyView } from './aiSynergy.js';
 import { runWithConcurrency } from './asyncPool.js';
 
 const HOUSE_TYPE = 'placidus';
@@ -696,7 +696,13 @@ type EnsureTransitResult = {
 
 type EnsureTransitOptions = {
   includeAiSynergy?: boolean;
+  aiSynergyMode?: 'sync' | 'cache-only' | 'none';
 };
+
+export function resolveDailyTransitAiSynergyMode(options: EnsureTransitOptions = {}) {
+  if (options.aiSynergyMode) return options.aiSynergyMode;
+  return options.includeAiSynergy === false ? 'none' : 'sync';
+}
 
 async function ensureAiSynergyForTransit(
   profile: BirthProfileDoc,
@@ -728,6 +734,48 @@ async function ensureAiSynergyForTransit(
   }
 }
 
+async function getCachedAiSynergyForTransit(
+  profile: BirthProfileDoc,
+  dateKey: string,
+  collections: MongoCollections,
+  logger: FastifyBaseLogger
+) {
+  try {
+    return await getCachedAiSynergyForDay({
+      userId: profile.userId,
+      profileHash: profile.profileHash,
+      dateKey,
+      collections,
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        error,
+        userId: profile.userId.toHexString(),
+        dateKey,
+      },
+      'cached ai synergy lookup skipped'
+    );
+    return null;
+  }
+}
+
+async function resolveAiSynergyForTransit(
+  mode: ReturnType<typeof resolveDailyTransitAiSynergyMode>,
+  profile: BirthProfileDoc,
+  dateKey: string,
+  doc: Pick<DailyTransitDoc, 'chart' | 'vibe'>,
+  collections: MongoCollections,
+  logger: FastifyBaseLogger
+) {
+  if (mode === 'none') return null;
+  if (mode === 'cache-only') {
+    return getCachedAiSynergyForTransit(profile, dateKey, collections, logger);
+  }
+
+  return ensureAiSynergyForTransit(profile, dateKey, doc, collections, logger);
+}
+
 async function ensureDailyTransitForProfile(
   profile: BirthProfileDoc,
   date: Date,
@@ -735,7 +783,7 @@ async function ensureDailyTransitForProfile(
   collections: MongoCollections,
   options: EnsureTransitOptions = {}
 ): Promise<EnsureTransitResult> {
-  const includeAiSynergy = options.includeAiSynergy ?? true;
+  const aiSynergyMode = resolveDailyTransitAiSynergyMode(options);
   const dateKey = toDateKey(date);
   const existing = await collections.dailyTransits.findOne({
     userId: profile.userId,
@@ -744,9 +792,14 @@ async function ensureDailyTransitForProfile(
   });
 
   if (existing?.vibe?.algorithmVersion === DAILY_VIBE_ALGORITHM_VERSION) {
-    const aiSynergy = includeAiSynergy
-      ? await ensureAiSynergyForTransit(profile, dateKey, existing, collections, logger)
-      : null;
+    const aiSynergy = await resolveAiSynergyForTransit(
+      aiSynergyMode,
+      profile,
+      dateKey,
+      existing,
+      collections,
+      logger
+    );
     return { doc: existing, cached: true, aiSynergy };
   }
 
@@ -810,9 +863,14 @@ async function ensureDailyTransitForProfile(
     { upsert: true }
   );
 
-  const aiSynergy = includeAiSynergy
-    ? await ensureAiSynergyForTransit(profile, dateKey, doc, collections, logger)
-    : null;
+  const aiSynergy = await resolveAiSynergyForTransit(
+    aiSynergyMode,
+    profile,
+    dateKey,
+    doc,
+    collections,
+    logger
+  );
   return { doc, cached: false, aiSynergy };
 }
 

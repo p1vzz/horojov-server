@@ -1,6 +1,14 @@
 import { env } from '../config/env.js';
-import { openAiStructuredGateway } from './llmGateway.js';
+import {
+  createCompositeLlmGatewayEventSink,
+  createConsoleLlmGatewayEventLogger,
+  createOpenAiStructuredGateway,
+  openAiStructuredGateway,
+} from './llmGateway.js';
+import { createPersistedLlmGatewayEventSink } from './llmTelemetry.js';
 import { getFullNatalAnalysisPromptConfig } from './llmPromptRegistry.js';
+import { REFLECTIVE_CAREER_GUIDANCE_PROMPT } from './llmPromptGuidance.js';
+import type { FastifyBaseLogger } from 'fastify';
 import type { ChartPromptPayload } from './careerInsights.js';
 import type {
   FullNatalCareerAnalysisPayloadDoc,
@@ -17,12 +25,33 @@ type FullNatalContextInput = {
   careerInsightsSummary?: string | null;
 };
 
+type FullNatalStructuredCompletionRequest = Parameters<
+  typeof openAiStructuredGateway.requestStructuredCompletion
+>[0];
+
+type FullNatalAnalysisGenerationDeps = {
+  isLlmAvailable?: () => boolean;
+  isBackupLlmAvailable?: () => boolean;
+  requestStructuredCompletion?: (
+    input: FullNatalStructuredCompletionRequest,
+  ) => Promise<{ parsedContent: unknown }>;
+  requestBackupStructuredCompletion?: (
+    input: FullNatalStructuredCompletionRequest,
+  ) => Promise<{ parsedContent: unknown }>;
+  backupModel?: string;
+};
+
+type FullNatalAnalysisProgressTracker = {
+  setStage: (stageKey: string) => void;
+};
+
 const FULL_NATAL_SCHEMA_VERSION = 'full_natal_analysis.v1';
 
 const FULL_NATAL_SYSTEM_PROMPT = [
   'You are a senior vocational astrologer and career strategy advisor.',
   'Your task is to produce a practical long-range career blueprint.',
   'Use only the provided input data and evidence.',
+  REFLECTIVE_CAREER_GUIDANCE_PROMPT,
   'No deterministic predictions and no guaranteed outcomes.',
   'Avoid medical, legal, and financial claims.',
   'Every key recommendation should reference chart evidence in plain language.',
@@ -195,6 +224,29 @@ const OUTPUT_SCHEMA = {
   },
 } as const;
 
+export type FullNatalAnalysisGenerationFailureCode =
+  | 'full_natal_llm_unavailable'
+  | 'full_natal_llm_unconfigured'
+  | 'full_natal_llm_timeout'
+  | 'full_natal_llm_rate_limited'
+  | 'full_natal_llm_invalid_response'
+  | 'full_natal_llm_upstream_error';
+
+export class FullNatalAnalysisGenerationError extends Error {
+  code: FullNatalAnalysisGenerationFailureCode;
+
+  constructor(input: {
+    code: FullNatalAnalysisGenerationFailureCode;
+    message: string;
+    cause?: unknown;
+  }) {
+    super(input.message);
+    this.name = 'FullNatalAnalysisGenerationError';
+    this.code = input.code;
+    this.cause = input.cause;
+  }
+}
+
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -203,181 +255,6 @@ function safeString(value: unknown, fallback: string, minLength = 1) {
   if (typeof value !== 'string') return fallback;
   const trimmed = value.trim();
   return trimmed.length >= minLength ? trimmed : fallback;
-}
-
-function buildEvidenceFromChart(chartPayload: ChartPromptPayload) {
-  const topPlacements = chartPayload.placements
-    .slice(0, 7)
-    .map((entry) => `${entry.planet} in ${entry.sign}, house ${entry.house}`)
-    .slice(0, 5);
-  const topAspects = chartPayload.aspects
-    .slice(0, 6)
-    .map((entry) => `${entry.from}-${entry.to} ${entry.type}${entry.orb !== null ? ` (orb ${entry.orb})` : ''}`)
-    .slice(0, 4);
-  return {
-    placements: topPlacements.length > 0 ? topPlacements : ['Core placements available from natal chart'],
-    aspects: topAspects.length > 0 ? topAspects : ['Major aspect pattern available from natal chart'],
-  };
-}
-
-function buildTemplateFallback(input: { chartPayload: ChartPromptPayload; context?: FullNatalContextInput }): FullNatalCareerAnalysisPayloadDoc {
-  const evidence = buildEvidenceFromChart(input.chartPayload);
-  const placementPrimary = evidence.placements[0] ?? 'Core placement signal';
-  const placementSecondary = evidence.placements[1] ?? placementPrimary;
-  const aspectPrimary = evidence.aspects[0] ?? 'Core aspect signal';
-  const aspectSecondary = evidence.aspects[1] ?? aspectPrimary;
-  const archetypes: FullNatalCareerArchetypeDoc[] = [
-    { name: 'Strategic Builder', score: 82, evidence: evidence.placements.slice(0, 2) },
-    { name: 'Systems Thinker', score: 78, evidence: evidence.aspects.slice(0, 2) },
-    { name: 'Execution Optimizer', score: 76, evidence: [placementSecondary] },
-  ];
-
-  const strengths: FullNatalCareerStrengthDoc[] = [
-    {
-      title: 'Structured long-range planning',
-      details: 'You tend to perform best when goals are sequenced into measurable milestones.',
-      evidence: [placementPrimary],
-    },
-    {
-      title: 'Learning velocity under complexity',
-      details: 'You can absorb complex systems quickly when the context is explicit and outcome-focused.',
-      evidence: [aspectPrimary],
-    },
-    {
-      title: 'High accountability in delivery',
-      details: 'You keep momentum when responsibilities and ownership boundaries are explicit.',
-      evidence: [placementSecondary],
-    },
-    {
-      title: 'Career signal awareness',
-      details: 'You gain leverage by regularly reviewing environment fit and adjusting role scope.',
-      evidence: [aspectSecondary],
-    },
-  ];
-
-  const blindSpots: FullNatalCareerBlindSpotDoc[] = [
-    {
-      title: 'Overextension risk',
-      risk: 'Taking on too many parallel initiatives can dilute impact.',
-      mitigation: 'Prioritize one strategic objective per quarter and enforce drop criteria.',
-      evidence: [aspectPrimary],
-    },
-    {
-      title: 'Speed over calibration',
-      risk: 'Fast execution can reduce decision quality on ambiguous opportunities.',
-      mitigation: 'Use short decision memos with explicit assumptions before major commitments.',
-      evidence: [aspectSecondary],
-    },
-    {
-      title: 'Role-context mismatch',
-      risk: 'Strong performance can drop in teams without clear decision ownership.',
-      mitigation: 'Assess reporting structure and mandate clarity before accepting scope expansions.',
-      evidence: [placementPrimary],
-    },
-  ];
-
-  const roleFitMatrix: FullNatalCareerRoleFitDoc[] = [
-    {
-      domain: 'Product & Strategy',
-      fitScore: 84,
-      why: 'Combines systems thinking with prioritization leverage.',
-      exampleRoles: ['Product Manager', 'Strategy Analyst', 'Program Lead'],
-    },
-    {
-      domain: 'Operations & Process',
-      fitScore: 80,
-      why: 'Supports repeatable execution and measurable throughput gains.',
-      exampleRoles: ['Operations Manager', 'Process Lead', 'Delivery Manager'],
-    },
-    {
-      domain: 'Data & Analytics',
-      fitScore: 77,
-      why: 'Favors structured reasoning and evidence-backed decisions.',
-      exampleRoles: ['Analytics Manager', 'BI Lead', 'Insights Analyst'],
-    },
-    {
-      domain: 'Consulting & Advisory',
-      fitScore: 75,
-      why: 'Strong in diagnosing systems and translating them into practical actions.',
-      exampleRoles: ['Consultant', 'Advisory Specialist', 'Transformation Lead'],
-    },
-    {
-      domain: 'People Leadership',
-      fitScore: 73,
-      why: 'Best fit in goal-oriented teams with clear accountability lanes.',
-      exampleRoles: ['Team Lead', 'Project Director', 'Functional Manager'],
-    },
-  ];
-
-  const phasePlan: FullNatalCareerPhasePlanDoc[] = [
-    {
-      phase: '0_6_months',
-      goal: 'Stabilize strategic direction and build measurable execution cadence.',
-      actions: [
-        'Define one primary career vector and two secondary options.',
-        'Set a quarterly skill roadmap tied to target roles.',
-        'Build a weekly review ritual for decisions and outcomes.',
-      ],
-      kpis: ['2 portfolio artifacts shipped', 'Weekly execution review consistency'],
-      risks: ['Scope drift', 'Low priority clarity'],
-    },
-    {
-      phase: '6_18_months',
-      goal: 'Scale influence by owning higher-impact cross-functional outcomes.',
-      actions: [
-        'Lead one initiative with visible business metrics.',
-        'Negotiate scope toward strategic problem ownership.',
-        'Build reusable frameworks for recurring decisions.',
-      ],
-      kpis: ['One high-impact initiative delivered', 'Expanded decision ownership'],
-      risks: ['Burnout via overcommitment', 'Unclear stakeholder alignment'],
-    },
-    {
-      phase: '18_36_months',
-      goal: 'Consolidate leadership positioning and long-term career leverage.',
-      actions: [
-        'Select specialization track and publish visible thought assets.',
-        'Shape role architecture around strengths and sustainable load.',
-        'Build mentorship and delegation systems.',
-      ],
-      kpis: ['Leadership scope expansion', 'Sustainable workload baseline'],
-      risks: ['Identity lock-in', 'Underinvestment in delegation'],
-    },
-  ];
-
-  const aiSignal =
-    typeof input.context?.aiSynergyScore === 'number' && Number.isFinite(input.context.aiSynergyScore)
-      ? `Current AI synergy signal: ${Math.round(input.context.aiSynergyScore)}%.`
-      : 'AI synergy signal is not yet available for this profile.';
-
-  return {
-    schemaVersion: FULL_NATAL_SCHEMA_VERSION,
-    headline: 'Full Natal Career Blueprint',
-    executiveSummary:
-      `This blueprint maps your natal chart into a long-range career strategy with phased execution priorities. ${aiSignal} ` +
-      'Use it as a decision framework for role selection, growth sequencing, and sustainable performance.',
-    careerArchetypes: archetypes,
-    strengths,
-    blindSpots,
-    roleFitMatrix,
-    phasePlan,
-    decisionRules: [
-      'Choose role scope before choosing title.',
-      'Prefer clear mandate over broad visibility.',
-      'Protect deep work windows every week.',
-      'Convert strategic goals into measurable outputs.',
-      'Review assumptions before major commitments.',
-      'Trade speed for clarity when stakes are high.',
-    ],
-    next90DaysPlan: [
-      'Define your primary 12-month career outcome in one paragraph.',
-      'Create a weekly execution scoreboard with 3 lead indicators.',
-      'Ship one portfolio artifact tied to your target role track.',
-      'Run two informational interviews in your best-fit domain.',
-      'Audit your current workload and remove one low-leverage stream.',
-      'Schedule a monthly career decision retrospective.',
-    ],
-  };
 }
 
 export function normalizeLlmPayload(raw: unknown): FullNatalCareerAnalysisPayloadDoc | null {
@@ -518,34 +395,49 @@ export function getFullNatalAnalysisConfig() {
   };
 }
 
-export async function generateFullNatalCareerAnalysis(input: {
-  chartPayload: ChartPromptPayload;
-  context?: FullNatalContextInput;
-}): Promise<{
-  analysis: FullNatalCareerAnalysisPayloadDoc;
-  model: string;
-  promptVersion: string;
-  narrativeSource: 'template' | 'llm';
-}> {
-  const fallback = buildTemplateFallback(input);
-  const config = getFullNatalAnalysisPromptConfig();
-  const { model, promptVersion } = config;
+let backupStructuredGateway: ReturnType<typeof createOpenAiStructuredGateway> | null = null;
 
-  if (!env.OPENAI_FULL_NATAL_ANALYSIS_ENABLED || !env.OPENAI_API_KEY) {
-    return {
-      analysis: fallback,
-      model,
-      promptVersion,
-      narrativeSource: 'template',
-    };
+function getBackupFullNatalGateway() {
+  if (
+    !env.LLM_BACKUP_API_KEY ||
+    !env.LLM_BACKUP_BASE_URL ||
+    !env.LLM_BACKUP_FULL_NATAL_ANALYSIS_MODEL
+  ) {
+    return null;
   }
 
-  const completion = await openAiStructuredGateway.requestStructuredCompletion({
-    feature: config.feature,
-    model,
-    promptVersion,
-    temperature: config.temperature,
-    maxTokens: config.maxTokens,
+  if (!backupStructuredGateway) {
+    backupStructuredGateway = createOpenAiStructuredGateway({
+      fetchImpl: fetch,
+      openAiBaseUrl: env.LLM_BACKUP_BASE_URL,
+      openAiApiKey: env.LLM_BACKUP_API_KEY,
+      retryPolicy: {
+        maxRetries: env.OPENAI_MAX_RETRIES,
+        baseDelayMs: env.OPENAI_RETRY_BASE_DELAY_MS,
+        maxDelayMs: env.OPENAI_RETRY_MAX_DELAY_MS,
+      },
+      onEvent: createCompositeLlmGatewayEventSink([
+        createConsoleLlmGatewayEventLogger(),
+        createPersistedLlmGatewayEventSink(),
+      ]),
+    });
+  }
+
+  return backupStructuredGateway;
+}
+
+function buildFullNatalStructuredRequest(input: {
+  config: ReturnType<typeof getFullNatalAnalysisPromptConfig>;
+  model: string;
+  chartPayload: ChartPromptPayload;
+  context?: FullNatalContextInput;
+}): FullNatalStructuredCompletionRequest {
+  return {
+    feature: input.config.feature,
+    model: input.model,
+    promptVersion: input.config.promptVersion,
+    temperature: input.config.temperature,
+    maxTokens: input.config.maxTokens,
     jsonSchema: OUTPUT_SCHEMA,
     messages: [
       { role: 'system', content: FULL_NATAL_SYSTEM_PROMPT },
@@ -561,21 +453,142 @@ ${JSON.stringify({
 })}`,
       },
     ],
-    timeoutMs: config.timeoutMs,
-  });
+    timeoutMs: input.config.timeoutMs,
+  };
+}
 
-  const normalized = normalizeLlmPayload(completion.parsedContent);
-  if (!normalized) {
-    throw new Error('OpenAI full natal analysis payload format is invalid');
+function isGatewayStage(error: unknown, stage: string) {
+  return (
+    Boolean(error) &&
+    typeof error === 'object' &&
+    (error as { failureStage?: unknown }).failureStage === stage
+  );
+}
+
+function upstreamStatus(error: unknown) {
+  if (!error || typeof error !== 'object') return null;
+  const status = (error as { upstreamStatus?: unknown }).upstreamStatus;
+  return typeof status === 'number' && Number.isFinite(status) ? status : null;
+}
+
+function isTimeoutLike(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  const name = error.name.toLowerCase();
+  return name.includes('timeout') || message.includes('timeout') || message.includes('aborted');
+}
+
+function classifyGenerationError(error: unknown): FullNatalAnalysisGenerationFailureCode {
+  if (isGatewayStage(error, 'config')) return 'full_natal_llm_unconfigured';
+  if (isGatewayStage(error, 'response_content') || isGatewayStage(error, 'response_json')) {
+    return 'full_natal_llm_invalid_response';
+  }
+  if (error instanceof Error && error.message.toLowerCase().includes('payload format is invalid')) {
+    return 'full_natal_llm_invalid_response';
+  }
+  if (isTimeoutLike(error)) return 'full_natal_llm_timeout';
+
+  const status = upstreamStatus(error);
+  if (status === 429) return 'full_natal_llm_rate_limited';
+  if (status !== null) return 'full_natal_llm_upstream_error';
+
+  return 'full_natal_llm_upstream_error';
+}
+
+export async function generateFullNatalCareerAnalysis(input: {
+  chartPayload: ChartPromptPayload;
+  context?: FullNatalContextInput;
+  logger?: Pick<FastifyBaseLogger, 'warn'>;
+  progress?: FullNatalAnalysisProgressTracker;
+}, deps: FullNatalAnalysisGenerationDeps = {}): Promise<{
+  analysis: FullNatalCareerAnalysisPayloadDoc;
+  model: string;
+  promptVersion: string;
+  narrativeSource: 'llm';
+}> {
+  const config = getFullNatalAnalysisPromptConfig();
+  const { model, promptVersion } = config;
+  const isLlmAvailable =
+    deps.isLlmAvailable ?? (() => Boolean(env.OPENAI_FULL_NATAL_ANALYSIS_ENABLED && env.OPENAI_API_KEY));
+  const backupGateway = getBackupFullNatalGateway();
+  const backupModel = deps.backupModel ?? env.LLM_BACKUP_FULL_NATAL_ANALYSIS_MODEL ?? env.LLM_BACKUP_MODEL ?? null;
+  const isBackupLlmAvailable =
+    deps.isBackupLlmAvailable ??
+    (() => Boolean(backupGateway && backupModel));
+  const requestStructuredCompletion =
+    deps.requestStructuredCompletion ?? openAiStructuredGateway.requestStructuredCompletion;
+  const requestBackupStructuredCompletion =
+    deps.requestBackupStructuredCompletion ?? backupGateway?.requestStructuredCompletion;
+
+  if (!isLlmAvailable() && !isBackupLlmAvailable()) {
+    throw new FullNatalAnalysisGenerationError({
+      code: 'full_natal_llm_unavailable',
+      message: 'Full natal analysis LLM pipeline is unavailable',
+    });
   }
 
-  return {
-    analysis: {
-      ...normalized,
-      schemaVersion: FULL_NATAL_SCHEMA_VERSION,
-    },
-    model,
-    promptVersion,
-    narrativeSource: 'llm',
+  const requestAndNormalize = async (
+    requestFn: NonNullable<FullNatalAnalysisGenerationDeps['requestStructuredCompletion']>,
+    requestModel: string,
+  ) => {
+    const completion = await requestFn(
+      buildFullNatalStructuredRequest({
+        config,
+        model: requestModel,
+        chartPayload: input.chartPayload,
+        context: input.context,
+      }),
+    );
+    input.progress?.setStage('validating_report');
+    const normalized = normalizeLlmPayload(completion.parsedContent);
+    if (!normalized) {
+      throw new Error('OpenAI full natal analysis payload format is invalid');
+    }
+
+    return {
+      analysis: {
+        ...normalized,
+        schemaVersion: FULL_NATAL_SCHEMA_VERSION,
+      },
+      model: requestModel,
+      promptVersion,
+      narrativeSource: 'llm' as const,
+    };
   };
+
+  const useBackup = async (primaryError?: unknown) => {
+    if (!isBackupLlmAvailable() || !requestBackupStructuredCompletion || !backupModel) {
+      throw primaryError;
+    }
+    input.progress?.setStage('backup_route');
+    try {
+      return await requestAndNormalize(requestBackupStructuredCompletion, backupModel);
+    } catch (backupError) {
+      input.logger?.warn(
+        { primaryError, backupError },
+        'full natal analysis backup provider generation failed',
+      );
+      throw backupError;
+    }
+  };
+
+  try {
+    if (!isLlmAvailable()) {
+      return await useBackup();
+    }
+
+    try {
+      return await requestAndNormalize(requestStructuredCompletion, model);
+    } catch (primaryError) {
+      return await useBackup(primaryError);
+    }
+  } catch (error) {
+    const code = classifyGenerationError(error);
+    input.logger?.warn({ error, code }, 'full natal analysis llm generation failed');
+    throw new FullNatalAnalysisGenerationError({
+      code,
+      message: 'Full natal analysis LLM generation failed',
+      cause: error,
+    });
+  }
 }

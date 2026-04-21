@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { ObjectId } from 'mongodb';
-import { env } from '../../config/env.js';
 import { getCollections } from '../../db/mongo.js';
 import {
   generateCareerInsights,
   getInsightsConfig,
   type InsightTier,
 } from '../careerInsights.js';
+import { resolveBackupModel } from '../llmStructuredFallback.js';
 import { requireAstrologyAuth } from './astrologyRouteGuards.js';
 import {
   buildChartPromptPayload,
@@ -45,14 +45,24 @@ export function registerAstrologyCareerInsightsRoutes(
     }
 
     const config = getInsightsConfig(tier);
+    const cacheModels = [
+      ...new Set(
+        [config.model, resolveBackupModel('career_insights')].filter(
+          (model): model is string => typeof model === 'string' && model.length > 0,
+        ),
+      ),
+    ];
     if (!parseQuery.data.regenerate) {
-      const cached = await collections.careerInsights.findOne({
-        userId: auth.user._id,
-        profileHash: profile.profileHash,
-        tier,
-        promptVersion: config.promptVersion,
-        model: config.model,
-      });
+      const cached = await collections.careerInsights.findOne(
+        {
+          userId: auth.user._id,
+          profileHash: profile.profileHash,
+          tier,
+          promptVersion: config.promptVersion,
+          model: { $in: cacheModels },
+        },
+        { sort: { generatedAt: -1 } },
+      );
 
       if (cached) {
         const normalizedInsights = cached.insights.slice(0, MAX_CAREER_INSIGHTS);
@@ -98,10 +108,6 @@ export function registerAstrologyCareerInsightsRoutes(
       return reply
         .code(502)
         .send({ error: "Cached natal chart has invalid format" });
-    }
-
-    if (!env.OPENAI_API_KEY) {
-      return reply.code(500).send({ error: "OpenAI API key is not configured" });
     }
 
     try {

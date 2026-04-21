@@ -1093,7 +1093,7 @@ test('burnout and lunar alert endpoints do not wait for ai synergy generation', 
   }
 });
 
-test('interview strategy settings trigger refill when autofill is confirmed', async () => {
+test('interview strategy settings save without triggering plan generation', async () => {
   const auth = buildFakeAuthContext('premium');
   let refillCalls = 0;
   const savedInputs: Array<Parameters<NotificationRouteDependencies['upsertInterviewStrategySettingsForUser']>[0]> = [];
@@ -1150,7 +1150,7 @@ test('interview strategy settings trigger refill when autofill is confirmed', as
     });
 
     assert.equal(response.statusCode, 200);
-    assert.equal(refillCalls, 1);
+    assert.equal(refillCalls, 0);
     assert.equal(response.json().settings.enabled, true);
     assert.equal(savedInputs.length, 1);
     const savedInput = savedInputs[0];
@@ -1221,17 +1221,21 @@ test('interview strategy plan refresh uses rebuild path; non-refresh uses refill
   let rebuildCalls = 0;
   let refillCalls = 0;
   let fetchCalls = 0;
+  const rebuildInputs: unknown[] = [];
+  const refillInputs: unknown[] = [];
 
   const app = await buildNotificationsTestApp({
     authenticateByAuthorizationHeader: async () => auth,
-    rebuildInterviewStrategyWindowForUser: async () => {
+    rebuildInterviewStrategyWindowForUser: async (input) => {
       rebuildCalls += 1;
+      rebuildInputs.push(input);
       return {
         status: 'generated',
       } as never;
     },
-    maybeRefillInterviewStrategyWindowForUser: async () => {
+    maybeRefillInterviewStrategyWindowForUser: async (input) => {
       refillCalls += 1;
+      refillInputs.push(input);
       return {
         status: 'noop',
       } as never;
@@ -1290,6 +1294,35 @@ test('interview strategy plan refresh uses rebuild path; non-refresh uses refill
     assert.equal(rebuildCalls, 1);
     assert.equal(refillCalls, 1);
     assert.equal(fetchCalls, 2);
+    assert.equal((rebuildInputs[0] as { llmMode?: string }).llmMode, 'background');
+    assert.equal((refillInputs[0] as { llmMode?: string }).llmMode, 'background');
+  } finally {
+    await app.close();
+  }
+});
+
+test('interview strategy plan reports daily transit generation outages', async () => {
+  const auth = buildFakeAuthContext('premium');
+  const app = await buildNotificationsTestApp({
+    authenticateByAuthorizationHeader: async () => auth,
+    rebuildInterviewStrategyWindowForUser: async () => {
+      throw new Error('Daily transit data unavailable for interview strategy generation');
+    },
+  });
+
+  try {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/notifications/interview-strategy-plan?refresh=true',
+      headers: {
+        authorization: 'Bearer test',
+      },
+    });
+
+    assert.equal(response.statusCode, 502);
+    assert.deepEqual(response.json(), {
+      error: 'Daily transit data unavailable for interview strategy generation.',
+    });
   } finally {
     await app.close();
   }

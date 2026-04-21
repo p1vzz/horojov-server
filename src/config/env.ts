@@ -76,6 +76,18 @@ const envSchema = z.object({
   OPENAI_TELEMETRY_RETENTION_DAYS: z.coerce.number().int().min(7).max(365).default(180),
   OPENAI_COST_INPUT_USD_PER_1M_TOKENS: optionalEnvNumber,
   OPENAI_COST_OUTPUT_USD_PER_1M_TOKENS: optionalEnvNumber,
+  LLM_BACKUP_API_KEY: optionalNonEmptyString,
+  LLM_BACKUP_BASE_URL: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().url().optional()
+  ),
+  LLM_BACKUP_MODEL: optionalNonEmptyString,
+  LLM_BACKUP_AI_SYNERGY_MODEL: optionalNonEmptyString,
+  LLM_BACKUP_CAREER_INSIGHTS_MODEL: optionalNonEmptyString,
+  LLM_BACKUP_JOB_SCREENSHOT_MODEL: optionalNonEmptyString,
+  LLM_BACKUP_CAREER_VIBE_PLAN_MODEL: optionalNonEmptyString,
+  LLM_BACKUP_INTERVIEW_STRATEGY_MODEL: optionalNonEmptyString,
+  LLM_BACKUP_FULL_NATAL_ANALYSIS_MODEL: optionalNonEmptyString,
   OPENAI_INSIGHTS_MODEL_FREE: z.string().min(1).default('gpt-4o-mini'),
   OPENAI_INSIGHTS_MODEL_PREMIUM: z.string().min(1).default('gpt-4o-mini'),
   OPENAI_INSIGHTS_PROMPT_VERSION: z.string().min(1).default('v2'),

@@ -10,7 +10,6 @@ import {
 import type { NormalizedJobPayload } from '../jobProviders.js';
 import {
   JobScreenshotParseError,
-  getScreenshotParserConfig,
   parseJobFromScreenshots,
 } from '../jobScreenshotParser.js';
 import {
@@ -42,7 +41,6 @@ export async function handleJobAnalyzeScreenshots(
 
   const now = new Date();
   const versions = getJobAnalysisVersions();
-  const screenshotParser = getScreenshotParserConfig();
   const collections = await getCollections();
   const profile = await collections.birthProfiles.findOne(
     {
@@ -176,8 +174,8 @@ export async function handleJobAnalyzeScreenshots(
     },
     versions: {
       ...versions,
-      screenshotPromptVersion: screenshotParser.promptVersion,
-      screenshotModel: screenshotParser.model,
+      screenshotPromptVersion: parsedScreenshot.promptVersion,
+      screenshotModel: parsedScreenshot.model,
     },
     scores: analysisResult.scores,
     breakdown: analysisResult.breakdown,

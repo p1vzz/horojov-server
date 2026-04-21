@@ -44,10 +44,11 @@ Provide one current map of backend API surface and runtime orchestration (startu
 - `PUT /birth-profile`
 - `POST /natal-chart`
 - `GET /daily-transit`
+  - query: `includeAiSynergy=true|false`; default uses cached AI Synergy only and does not generate an AI narrative synchronously
 - `GET /ai-synergy/history`
 - `GET /morning-briefing` (premium)
 - `GET /full-natal-analysis` (premium)
-- `POST /full-natal-analysis/regenerate` (premium)
+- `GET /full-natal-analysis/progress` (premium)
 - `GET /career-insights`
 - `GET /discover-roles`
   - query: `query`, `limit`, `searchLimit`, `refresh`
@@ -79,6 +80,7 @@ Provide one current map of backend API surface and runtime orchestration (startu
 - `POST /lunar-productivity-seen` (premium)
 - `PUT /interview-strategy-settings` (premium)
 - `GET /interview-strategy-plan` (premium)
+  - API-triggered rebuild/refill returns deterministic slots first; optional LLM explanation polish runs in the background
 
 ## Runtime Sequence
 

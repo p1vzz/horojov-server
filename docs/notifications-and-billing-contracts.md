@@ -163,7 +163,8 @@ Validation:
 
 Success:
 - returns `{ settings }`
-- may trigger non-blocking refill path when enabled + autofill confirmed.
+- does not generate slots; clients should call `GET /interview-strategy-plan` after saving settings.
+- saving `enabled=false` preserves future server windows; mobile removes device-local calendar events separately.
 
 ### `GET /interview-strategy-plan`
 
@@ -183,10 +184,14 @@ Error behavior:
 - planning failures -> `502`
 
 Current planning behavior:
-- server requires the active natal chart and blends transit-to-natal interview signals with daily career momentum and AI synergy.
+- server requires the active natal chart and blends transit-to-natal interview signals with daily career momentum and a neutral AI-synergy prior.
 - generated calendar windows are sparse: up to 4-5 strongest windows per 30-day horizon, with one 1-3 hour range per selected day.
-- slots below `INTERVIEW_STRATEGY_MIN_SCORE` are not backfilled; the default threshold is `68`.
-- each returned slot includes `explanation` and `calendarNote`; mobile writes the short note into calendar event notes.
+- slots below `INTERVIEW_STRATEGY_MIN_SCORE` are not normally backfilled; the default threshold is `68`.
+- first-release safety heuristic: when the normal threshold returns zero windows, selection can temporarily use a safety floor within that generation to one best window at or above `62`; this safety floor is not persisted and the next rolling generation starts from the normal threshold again.
+- each returned slot includes `explanation`, `explanationSource`, and `calendarNote`; mobile writes the short note into calendar event notes and creates the event with free availability.
+- API-triggered generation returns deterministic explanations immediately; optional provider polish updates stored slots in the background and marks only those replacements as `explanationSource=llm`.
+- plan generation/refill deletes expired past slots for the user while preserving future slots when the feature is manually disabled.
+- first-release auto-enable is mobile-driven only when returned settings are `source: "default"`; saved `enabled=false` is treated as manual opt-out.
 
 ## Billing API (`/api/billing`)
 
