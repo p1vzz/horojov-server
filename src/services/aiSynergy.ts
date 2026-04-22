@@ -79,6 +79,10 @@ export type EnsureAiSynergyResult = {
   cached: boolean;
 };
 
+export function shouldReuseCachedAiSynergy(doc: Pick<AiSynergyDailyDoc, 'narrativeStatus'>) {
+  return doc.narrativeStatus !== 'pending';
+}
+
 const AI_SYNERGY_ALGORITHM_VERSION = 'ai-synergy-v2';
 
 const AI_SYNERGY_LLM_SYSTEM_PROMPT = [
@@ -978,7 +982,7 @@ export async function getOrCreateAiSynergyForDay(input: CreateAiSynergyInput): P
         algorithmVersion: AI_SYNERGY_ALGORITHM_VERSION,
       });
 
-  if (existing) {
+  if (existing && shouldReuseCachedAiSynergy(existing)) {
     return { item: toView(existing), cached: true };
   }
 

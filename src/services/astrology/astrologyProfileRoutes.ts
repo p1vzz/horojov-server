@@ -8,9 +8,13 @@ import {
 } from '../dailyTransit.js';
 import {
   aiSynergyHistoryQuerySchema,
+  buildBirthProfileEditLockSnapshot,
+  buildProfileHash,
   careerVibePlanQuerySchema,
   dailyTransitQuerySchema,
   natalChartRequestSchema,
+  resolveBirthProfileEditPolicy,
+  serializeBirthProfileEditLock,
   upsertBirthProfile,
 } from './astrologyShared.js';
 import { requireAstrologyAuth } from './astrologyRouteGuards.js';
@@ -49,6 +53,7 @@ export function registerAstrologyProfileRoutes(
         admin1: profile.admin1 ?? null,
         updatedAt: profile.updatedAt.toISOString(),
       },
+      editLock: serializeBirthProfileEditLock(buildBirthProfileEditLockSnapshot(profile)),
     };
   });
 
@@ -67,9 +72,32 @@ export function registerAstrologyProfileRoutes(
     const collections = await getCollections();
     const existingProfile = await collections.birthProfiles.findOne(
       { userId: auth.user._id },
-      { projection: { profileHash: 1 } },
+      {
+        projection: {
+          profileHash: 1,
+          birthEditLockDurationDays: 1,
+          birthEditLockedUntil: 1,
+          birthEditLockLevel: 1,
+        },
+      },
     );
-    const profileHash = await upsertBirthProfile(auth.user._id, parsed.data);
+    const nextProfileHash = buildProfileHash(parsed.data);
+    const editPolicy = resolveBirthProfileEditPolicy(existingProfile, nextProfileHash);
+    if (editPolicy.blocked) {
+      const editLock = serializeBirthProfileEditLock(editPolicy.lock);
+      return reply.code(429).send({
+        error: "Birth profile edit is temporarily locked.",
+        code: "birth_profile_edit_locked",
+        editLock,
+        lockedUntil: editLock.lockedUntil,
+        retryAfterSeconds: editLock.retryAfterSeconds,
+        lockLevel: editLock.lockLevel,
+      });
+    }
+
+    const profileHash = await upsertBirthProfile(auth.user._id, parsed.data, {
+      editLock: editPolicy.nextLock,
+    });
     if (existingProfile?.profileHash && existingProfile.profileHash !== profileHash) {
       await resetInterviewStrategyWindowAfterProfileChange({
         userId: auth.user._id,
@@ -79,7 +107,19 @@ export function registerAstrologyProfileRoutes(
     return {
       profile: {
         ...parsed.data,
+        name: parsed.data.name ?? "",
       },
+      editLock: serializeBirthProfileEditLock(
+        editPolicy.nextLock
+          ? buildBirthProfileEditLockSnapshot(
+              {
+                birthEditLockDurationDays: editPolicy.nextLock.durationDays,
+                birthEditLockedUntil: editPolicy.nextLock.lockedUntil,
+                birthEditLockLevel: editPolicy.nextLock.lockLevel,
+              },
+            )
+          : editPolicy.lock,
+      ),
     };
   });
 

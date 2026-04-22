@@ -47,6 +47,17 @@ const envSchema = z.object({
     (value) => (typeof value === 'string' ? value.trim() : value),
     z.string().optional()
   ),
+  AUTH_ANONYMOUS_RATE_LIMIT_ENABLED: optionalEnvBoolean,
+  AUTH_ANONYMOUS_RATE_LIMIT_MAX: z.preprocess((value) => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'string' && value.trim() === '') return undefined;
+    return value;
+  }, z.coerce.number().int().min(1).max(10_000).optional()),
+  AUTH_ANONYMOUS_RATE_LIMIT_WINDOW_MS: z.preprocess((value) => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'string' && value.trim() === '') return undefined;
+    return value;
+  }, z.coerce.number().int().min(1_000).max(24 * 60 * 60 * 1000).optional()),
   ASTROLOGY_URL: z.string().url().default('https://json.astrologyapi.com/v1'),
   ASTROLOGY_USER_ID: optionalNonEmptyString,
   ASTROLOGY_API_KEY: optionalNonEmptyString,
@@ -214,6 +225,12 @@ const toList = (input: string) =>
 
 export const env = {
   ...parsedEnv.data,
+  AUTH_ANONYMOUS_RATE_LIMIT_ENABLED:
+    parsedEnv.data.AUTH_ANONYMOUS_RATE_LIMIT_ENABLED ?? (parsedEnv.data.NODE_ENV !== 'test'),
+  AUTH_ANONYMOUS_RATE_LIMIT_MAX:
+    parsedEnv.data.AUTH_ANONYMOUS_RATE_LIMIT_MAX ?? (parsedEnv.data.NODE_ENV === 'production' ? 30 : 300),
+  AUTH_ANONYMOUS_RATE_LIMIT_WINDOW_MS:
+    parsedEnv.data.AUTH_ANONYMOUS_RATE_LIMIT_WINDOW_MS ?? 60 * 60 * 1000,
   DEV_FORCE_PREMIUM_FOR_ALL_USERS:
     parsedEnv.data.DEV_FORCE_PREMIUM_FOR_ALL_USERS ?? parsedEnv.data.NODE_ENV === 'development',
   JOB_USAGE_LIMITS_ENABLED:

@@ -34,6 +34,12 @@ export function registerAstrologyCareerInsightsRoutes(
     }
 
     const tier = parseQuery.data.tier as InsightTier;
+    if (tier === "premium" && auth.user.subscriptionTier !== "premium") {
+      return reply
+        .code(403)
+        .send({ error: "Premium required", code: "premium_required" });
+    }
+
     const collections = await getCollections();
     const profile = await collections.birthProfiles.findOne({
       userId: auth.user._id,

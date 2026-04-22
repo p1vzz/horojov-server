@@ -40,6 +40,10 @@ export type BirthProfileDoc = {
   admin1?: string | null;
   normalizedCity: string;
   profileHash: string;
+  birthEditLockLevel?: number;
+  birthEditLockDurationDays?: number | null;
+  birthEditLockedUntil?: Date | null;
+  birthEditLastChangedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };

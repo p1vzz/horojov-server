@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeNarrativeFromLlm } from './aiSynergy.js';
+import { normalizeNarrativeFromLlm, shouldReuseCachedAiSynergy } from './aiSynergy.js';
 import { normalizeInsightsPayload } from './careerInsights.js';
 import { normalizeLlmPayload } from './fullNatalAnalysis.js';
 import { normalizeInterviewStrategyExplanationFromLlm } from './interviewStrategy.js';
@@ -246,4 +246,11 @@ test('llm eval: ai synergy narrative normalizer requires complete copy and three
     }),
     null
   );
+});
+
+test('llm eval: ai synergy pending cache is treated as unfinished', () => {
+  assert.equal(shouldReuseCachedAiSynergy({ narrativeStatus: 'ready' }), true);
+  assert.equal(shouldReuseCachedAiSynergy({ narrativeStatus: 'failed' }), true);
+  assert.equal(shouldReuseCachedAiSynergy({ narrativeStatus: 'unavailable' }), true);
+  assert.equal(shouldReuseCachedAiSynergy({ narrativeStatus: 'pending' }), false);
 });

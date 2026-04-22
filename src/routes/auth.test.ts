@@ -3,7 +3,11 @@ import test from 'node:test';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ObjectId } from 'mongodb';
 import type { AuthContext } from '../services/auth.js';
-import { registerAuthRoutes, type AuthRouteDependencies } from './auth.js';
+import {
+  createInMemoryAnonymousSessionRateLimiter,
+  registerAuthRoutes,
+  type AuthRouteDependencies,
+} from './auth.js';
 
 function buildFakeAuthContext(subscriptionTier: 'free' | 'premium' = 'free'): AuthContext {
   const userId = new ObjectId();
@@ -41,6 +45,57 @@ async function buildAuthTestApp(deps?: Partial<AuthRouteDependencies>): Promise<
   });
   return app;
 }
+
+test('anonymous session rate limiter blocks requests after configured window capacity', () => {
+  const limiter = createInMemoryAnonymousSessionRateLimiter({
+    enabled: true,
+    max: 2,
+    windowMs: 1000,
+  });
+  const startedAt = new Date('2026-04-22T10:00:00.000Z');
+
+  assert.deepEqual(limiter({ key: 'ip:127.0.0.1', now: startedAt }), { allowed: true });
+  assert.deepEqual(limiter({ key: 'ip:127.0.0.1', now: startedAt }), { allowed: true });
+  assert.deepEqual(limiter({ key: 'ip:127.0.0.1', now: startedAt }), {
+    allowed: false,
+    retryAfterSeconds: 1,
+  });
+  assert.deepEqual(limiter({ key: 'ip:127.0.0.1', now: new Date(startedAt.getTime() + 1000) }), {
+    allowed: true,
+  });
+});
+
+test('anonymous route returns 429 before session creation when rate limited', async () => {
+  let createCalls = 0;
+  const app = await buildAuthTestApp({
+    checkAnonymousSessionRateLimit: () => ({
+      allowed: false,
+      retryAfterSeconds: 42,
+    }),
+    createAnonymousSession: async () => {
+      createCalls += 1;
+      throw new Error('createAnonymousSession should not be called when rate limited');
+    },
+  });
+
+  try {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/anonymous',
+    });
+
+    assert.equal(response.statusCode, 429);
+    assert.equal(response.headers['retry-after'], '42');
+    assert.deepEqual(response.json(), {
+      error: 'Too many anonymous session requests',
+      code: 'anonymous_session_rate_limited',
+      retryAfterSeconds: 42,
+    });
+    assert.equal(createCalls, 0);
+  } finally {
+    await app.close();
+  }
+});
 
 test('auth routes protect /me and /apple-link with 401', async () => {
   const app = await buildAuthTestApp({

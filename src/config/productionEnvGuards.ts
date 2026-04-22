@@ -1,5 +1,6 @@
 type ProductionEnvGuardInput = {
   NODE_ENV: 'development' | 'test' | 'production';
+  AUTH_ANONYMOUS_RATE_LIMIT_ENABLED?: boolean;
   DEV_FORCE_PREMIUM_FOR_ALL_USERS?: boolean;
   JOB_USAGE_LIMITS_ENABLED?: boolean;
   JOB_METRICS_ENDPOINTS_ENABLED?: boolean;
@@ -12,6 +13,9 @@ export function getProductionEnvGuardIssues(input: ProductionEnvGuardInput) {
   }
 
   const issues: string[] = [];
+  if (input.AUTH_ANONYMOUS_RATE_LIMIT_ENABLED === false) {
+    issues.push('AUTH_ANONYMOUS_RATE_LIMIT_ENABLED must not be false in production');
+  }
   if (input.DEV_FORCE_PREMIUM_FOR_ALL_USERS === true) {
     issues.push('DEV_FORCE_PREMIUM_FOR_ALL_USERS must not be true in production');
   }

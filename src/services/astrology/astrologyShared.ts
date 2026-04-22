@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { env } from '../../config/env.js';
 import {
   getCollections,
+  type BirthProfileDoc,
   type FullNatalCareerAnalysisDoc,
   type FullNatalCareerAnalysisPayloadDoc,
 } from '../../db/mongo.js';
@@ -281,7 +282,7 @@ export function normalizeCoordinate(value: number | null | undefined) {
   return Number(value.toFixed(6));
 }
 
-function buildProfileHash(input: NatalInput) {
+export function buildProfileHash(input: NatalInput) {
   const latitude = normalizeCoordinate(input.latitude ?? null);
   const longitude = normalizeCoordinate(input.longitude ?? null);
   const normalized = {
@@ -299,27 +300,180 @@ function buildProfileHash(input: NatalInput) {
   return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
 }
 
-export async function upsertBirthProfile(userId: ObjectId, input: NatalInput) {
+const BIRTH_PROFILE_EDIT_LOCK_BASE_DAYS = 1;
+const BIRTH_PROFILE_EDIT_LOCK_MAX_DAYS = 30;
+const BIRTH_PROFILE_EDIT_LOCK_MAX_LEVEL = 6;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type BirthProfileEditLockDoc = Pick<
+  BirthProfileDoc,
+  "profileHash" | "birthEditLockDurationDays" | "birthEditLockedUntil" | "birthEditLockLevel"
+>;
+
+export type BirthProfileEditLockSnapshot = {
+  lockedUntil: Date | null;
+  retryAfterSeconds: number | null;
+  lockLevel: number;
+  durationDays: number | null;
+};
+
+export type BirthProfileEditPolicy =
+  | {
+      changed: false;
+      blocked: false;
+      lock: BirthProfileEditLockSnapshot;
+      nextLock: null;
+    }
+  | {
+      changed: true;
+      blocked: true;
+      lock: BirthProfileEditLockSnapshot;
+      nextLock: null;
+    }
+  | {
+      changed: true;
+      blocked: false;
+      lock: BirthProfileEditLockSnapshot;
+      nextLock: {
+        lockedUntil: Date;
+        lockLevel: number;
+        durationDays: number;
+      };
+    };
+
+function normalizeBirthEditLockLevel(value: unknown) {
+  const numeric = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : 0;
+  return Math.max(0, Math.min(BIRTH_PROFILE_EDIT_LOCK_MAX_LEVEL, numeric));
+}
+
+function normalizeBirthEditLockDurationDays(value: unknown) {
+  const numeric = typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : null;
+  if (numeric === null || numeric < 1) return null;
+  return Math.min(BIRTH_PROFILE_EDIT_LOCK_MAX_DAYS, numeric);
+}
+
+export function resolveBirthProfileEditLockDurationDays(lockLevel: number) {
+  const normalizedLevel = Math.max(1, Math.min(BIRTH_PROFILE_EDIT_LOCK_MAX_LEVEL, Math.trunc(lockLevel)));
+  const exponentialDays = BIRTH_PROFILE_EDIT_LOCK_BASE_DAYS * 2 ** (normalizedLevel - 1);
+  return Math.min(BIRTH_PROFILE_EDIT_LOCK_MAX_DAYS, exponentialDays);
+}
+
+export function buildBirthProfileEditLockSnapshot(
+  input: Partial<BirthProfileEditLockDoc> | null | undefined,
+  now = new Date(),
+): BirthProfileEditLockSnapshot {
+  const lockedUntil =
+    input?.birthEditLockedUntil instanceof Date && Number.isFinite(input.birthEditLockedUntil.getTime())
+      ? input.birthEditLockedUntil
+      : null;
+  const futureLockedUntil = lockedUntil && lockedUntil.getTime() > now.getTime() ? lockedUntil : null;
+  return {
+    lockedUntil: futureLockedUntil,
+    retryAfterSeconds: futureLockedUntil
+      ? Math.max(1, Math.ceil((futureLockedUntil.getTime() - now.getTime()) / 1000))
+      : null,
+    lockLevel: normalizeBirthEditLockLevel(input?.birthEditLockLevel),
+    durationDays: normalizeBirthEditLockDurationDays(input?.birthEditLockDurationDays),
+  };
+}
+
+export function serializeBirthProfileEditLock(snapshot: BirthProfileEditLockSnapshot) {
+  return {
+    lockedUntil: snapshot.lockedUntil ? snapshot.lockedUntil.toISOString() : null,
+    retryAfterSeconds: snapshot.retryAfterSeconds,
+    lockLevel: snapshot.lockLevel,
+    durationDays: snapshot.durationDays,
+  };
+}
+
+export function resolveBirthProfileEditPolicy(
+  existingProfile: Partial<BirthProfileEditLockDoc> | null | undefined,
+  nextProfileHash: string,
+  now = new Date(),
+): BirthProfileEditPolicy {
+  const currentLock = buildBirthProfileEditLockSnapshot(existingProfile, now);
+  const currentProfileHash =
+    typeof existingProfile?.profileHash === "string" && existingProfile.profileHash.trim().length > 0
+      ? existingProfile.profileHash
+      : null;
+
+  if (!currentProfileHash || currentProfileHash === nextProfileHash) {
+    return {
+      changed: false,
+      blocked: false,
+      lock: currentLock,
+      nextLock: null,
+    };
+  }
+
+  if (currentLock.lockedUntil) {
+    return {
+      changed: true,
+      blocked: true,
+      lock: currentLock,
+      nextLock: null,
+    };
+  }
+
+  const nextLockLevel = Math.min(currentLock.lockLevel + 1, BIRTH_PROFILE_EDIT_LOCK_MAX_LEVEL);
+  const durationDays = resolveBirthProfileEditLockDurationDays(nextLockLevel);
+  const lockedUntil = new Date(now.getTime() + durationDays * DAY_MS);
+
+  return {
+    changed: true,
+    blocked: false,
+    lock: {
+      lockedUntil,
+      retryAfterSeconds: Math.max(1, Math.ceil((lockedUntil.getTime() - now.getTime()) / 1000)),
+      lockLevel: nextLockLevel,
+      durationDays,
+    },
+    nextLock: {
+      lockedUntil,
+      lockLevel: nextLockLevel,
+      durationDays,
+    },
+  };
+}
+
+export async function upsertBirthProfile(
+  userId: ObjectId,
+  input: NatalInput,
+  options?: {
+    editLock?: {
+      lockedUntil: Date;
+      lockLevel: number;
+      durationDays: number;
+    } | null;
+  },
+) {
   const collections = await getCollections();
   const now = new Date();
   const profileHash = buildProfileHash(input);
+  const nextSet: Partial<BirthProfileDoc> = {
+    name: normalizePersonName(input.name),
+    birthDate: input.birthDate,
+    birthTime: input.birthTime,
+    unknownTime: input.unknownTime,
+    city: input.city,
+    latitude: normalizeCoordinate(input.latitude ?? null),
+    longitude: normalizeCoordinate(input.longitude ?? null),
+    country: normalizeOptionalText(input.country),
+    admin1: normalizeOptionalText(input.admin1),
+    normalizedCity: normalizeCity(input.city),
+    profileHash,
+    updatedAt: now,
+  };
+  if (options?.editLock) {
+    nextSet.birthEditLockLevel = options.editLock.lockLevel;
+    nextSet.birthEditLockDurationDays = options.editLock.durationDays;
+    nextSet.birthEditLockedUntil = options.editLock.lockedUntil;
+    nextSet.birthEditLastChangedAt = now;
+  }
   await collections.birthProfiles.updateOne(
     { userId },
     {
-      $set: {
-        name: normalizePersonName(input.name),
-        birthDate: input.birthDate,
-        birthTime: input.birthTime,
-        unknownTime: input.unknownTime,
-        city: input.city,
-        latitude: normalizeCoordinate(input.latitude ?? null),
-        longitude: normalizeCoordinate(input.longitude ?? null),
-        country: normalizeOptionalText(input.country),
-        admin1: normalizeOptionalText(input.admin1),
-        normalizedCity: normalizeCity(input.city),
-        profileHash,
-        updatedAt: now,
-      },
+      $set: nextSet,
       $setOnInsert: {
         _id: new ObjectId(),
         createdAt: now,

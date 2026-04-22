@@ -8,10 +8,12 @@ import {
   type AstrologyRouteDependencies,
 } from './astrology.js';
 import {
+  buildProfileHash,
   careerVibePlanQuerySchema,
   dailyTransitQuerySchema,
   discoverRolesQuerySchema,
   fullNatalAnalysisQuerySchema,
+  resolveBirthProfileEditPolicy,
 } from '../services/astrology/astrologyShared.js';
 import { statusForFullNatalGenerationCode } from '../services/astrology/astrologyPremiumAnalysisRoutes.js';
 
@@ -108,6 +110,7 @@ test("premium endpoints return 403 for free users", async () => {
       "/api/astrology/morning-briefing",
       "/api/astrology/full-natal-analysis",
       "/api/astrology/full-natal-analysis/progress",
+      "/api/astrology/career-insights?tier=premium",
     ];
 
     for (const route of routes) {
@@ -212,6 +215,106 @@ test("runtime astrology query booleans do not coerce string false to true", () =
     refresh: "true",
   });
   assert.equal(refreshedCareerVibe.refresh, true);
+});
+
+test("birth profile edit policy starts with one-day lock and blocks edits while active", () => {
+  const now = new Date("2026-04-21T12:00:00.000Z");
+  const initialProfile = {
+    birthDate: "01/01/1990",
+    birthTime: "08:30",
+    unknownTime: false,
+    city: "New York",
+  };
+  const nextProfile = {
+    ...initialProfile,
+    birthTime: "09:00",
+  };
+  const nextProfileHash = buildProfileHash(nextProfile);
+
+  const firstPolicy = resolveBirthProfileEditPolicy(
+    {
+      profileHash: buildProfileHash(initialProfile),
+    },
+    nextProfileHash,
+    now,
+  );
+
+  assert.equal(firstPolicy.changed, true);
+  assert.equal(firstPolicy.blocked, false);
+  assert.equal(firstPolicy.nextLock?.durationDays, 1);
+  assert.equal(firstPolicy.nextLock?.lockLevel, 1);
+  assert.equal(firstPolicy.nextLock?.lockedUntil.toISOString(), "2026-04-22T12:00:00.000Z");
+
+  const blockedPolicy = resolveBirthProfileEditPolicy(
+    {
+      profileHash: nextProfileHash,
+      birthEditLockDurationDays: firstPolicy.nextLock?.durationDays,
+      birthEditLockLevel: firstPolicy.nextLock?.lockLevel,
+      birthEditLockedUntil: firstPolicy.nextLock?.lockedUntil,
+    },
+    buildProfileHash({ ...nextProfile, birthTime: "10:00" }),
+    new Date("2026-04-21T13:00:00.000Z"),
+  );
+
+  assert.equal(blockedPolicy.changed, true);
+  assert.equal(blockedPolicy.blocked, true);
+  assert.equal(blockedPolicy.lock.lockLevel, 1);
+  assert.equal(blockedPolicy.lock.durationDays, 1);
+  assert.equal(blockedPolicy.lock.lockedUntil?.toISOString(), "2026-04-22T12:00:00.000Z");
+});
+
+test("birth profile edit policy increments lock after prior lock expires", () => {
+  const currentProfile = {
+    birthDate: "01/01/1990",
+    birthTime: "08:30",
+    unknownTime: false,
+    city: "New York",
+  };
+  const policy = resolveBirthProfileEditPolicy(
+    {
+      profileHash: buildProfileHash(currentProfile),
+      birthEditLockDurationDays: 1,
+      birthEditLockLevel: 1,
+      birthEditLockedUntil: new Date("2026-04-20T12:00:00.000Z"),
+    },
+    buildProfileHash({ ...currentProfile, city: "Boston" }),
+    new Date("2026-04-21T12:00:00.000Z"),
+  );
+
+  assert.equal(policy.changed, true);
+  assert.equal(policy.blocked, false);
+  assert.equal(policy.nextLock?.lockLevel, 2);
+  assert.equal(policy.nextLock?.durationDays, 2);
+  assert.equal(policy.nextLock?.lockedUntil.toISOString(), "2026-04-23T12:00:00.000Z");
+});
+
+test("birth profile edit policy does not lock initial profile or no-op updates", () => {
+  const profile = {
+    birthDate: "01/01/1990",
+    birthTime: "08:30",
+    unknownTime: false,
+    city: "New York",
+  };
+  const profileHash = buildProfileHash(profile);
+
+  const initialPolicy = resolveBirthProfileEditPolicy(null, profileHash, new Date("2026-04-21T12:00:00.000Z"));
+  assert.equal(initialPolicy.changed, false);
+  assert.equal(initialPolicy.blocked, false);
+  assert.equal(initialPolicy.nextLock, null);
+
+  const noOpPolicy = resolveBirthProfileEditPolicy(
+    {
+      profileHash,
+      birthEditLockDurationDays: 1,
+      birthEditLockLevel: 1,
+      birthEditLockedUntil: new Date("2026-04-22T12:00:00.000Z"),
+    },
+    profileHash,
+    new Date("2026-04-21T12:00:00.000Z"),
+  );
+  assert.equal(noOpPolicy.changed, false);
+  assert.equal(noOpPolicy.blocked, false);
+  assert.equal(noOpPolicy.nextLock, null);
 });
 
 test("full natal analysis query parses cache-only booleans explicitly", () => {

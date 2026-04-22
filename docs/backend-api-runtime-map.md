@@ -42,6 +42,7 @@ Provide one current map of backend API surface and runtime orchestration (startu
 
 - `GET /birth-profile`
 - `PUT /birth-profile`
+  - profile-changing updates are rate locked per user: first successful edit locks the next edit for 1 day, then 2/4/8/16/30 days on later successful edits; blocked edits return `429` with `code=birth_profile_edit_locked` and `editLock`
 - `POST /natal-chart`
 - `GET /daily-transit`
   - query: `includeAiSynergy=true|false`; default uses cached AI Synergy only and does not generate an AI narrative synchronously

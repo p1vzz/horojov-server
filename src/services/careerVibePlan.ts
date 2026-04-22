@@ -49,6 +49,22 @@ export type EnsureCareerVibePlanResult = {
 export type CareerVibePlanLlmMode = 'sync' | 'background' | 'off';
 
 const CAREER_VIBE_PLAN_SCHEMA_VERSION = 'career-vibe-plan-v1';
+const CAREER_VIBE_PENDING_RETRY_AFTER_MS = 60_000;
+const CAREER_VIBE_SUMMARY_MIN_LENGTH = 90;
+const CAREER_VIBE_SUMMARY_MAX_LENGTH = 180;
+
+export function shouldReuseCachedCareerVibePlan(input: {
+  doc: Pick<CareerVibeDailyDoc, 'narrativeStatus' | 'updatedAt'>;
+  llmAllowed: boolean;
+  llmMode: CareerVibePlanLlmMode;
+  now: Date;
+}) {
+  if (input.doc.narrativeStatus !== 'pending') return true;
+  if (!input.llmAllowed) return false;
+  if (input.llmMode === 'sync') return false;
+  const ageMs = input.now.getTime() - input.doc.updatedAt.getTime();
+  return ageMs >= 0 && ageMs < CAREER_VIBE_PENDING_RETRY_AFTER_MS;
+}
 
 const CAREER_VIBE_PLAN_LLM_SYSTEM_PROMPT = [
   'You are a pragmatic career operating coach inside an astrology career app.',
@@ -65,7 +81,7 @@ const CAREER_VIBE_PLAN_LLM_USER_PROMPT = [
   'Generate an actionable daily career plan.',
   'Requirements:',
   '- headline: 4..72 chars.',
-  '- summary: 50..260 chars.',
+  '- summary: exactly 2 sentences, 90..180 chars total, no line breaks; it must fit into a five-line mobile text block.',
   '- primaryAction: one concrete action, 20..140 chars.',
   '- bestFor: 2..4 short work categories.',
   '- avoid: 2..4 concrete traps to avoid.',
@@ -93,7 +109,7 @@ const CAREER_VIBE_PLAN_LLM_SCHEMA = {
     ],
     properties: {
       headline: { type: 'string', minLength: 4, maxLength: 72 },
-      summary: { type: 'string', minLength: 50, maxLength: 260 },
+      summary: { type: 'string', minLength: CAREER_VIBE_SUMMARY_MIN_LENGTH, maxLength: CAREER_VIBE_SUMMARY_MAX_LENGTH },
       primaryAction: { type: 'string', minLength: 20, maxLength: 140 },
       bestFor: {
         type: 'array',
@@ -178,7 +194,7 @@ export function normalizeCareerVibePlanFromLlm(raw: unknown): CareerVibeLlmPlan 
   if (!raw || typeof raw !== 'object') return null;
   const payload = raw as Record<string, unknown>;
   const headline = normalizeLlmString(payload.headline, 4, 72);
-  const summary = normalizeLlmString(payload.summary, 50, 260);
+  const summary = normalizeLlmString(payload.summary, CAREER_VIBE_SUMMARY_MIN_LENGTH, CAREER_VIBE_SUMMARY_MAX_LENGTH);
   const primaryAction = normalizeLlmString(payload.primaryAction, 20, 140);
   const bestFor = normalizeLlmStringArray(payload.bestFor, 2, 4, 4, 48);
   const avoid = normalizeLlmStringArray(payload.avoid, 2, 4, 8, 90);
@@ -680,10 +696,11 @@ export async function getOrCreateCareerVibePlanForUser(input: {
   };
   const llmMode = input.llmMode ?? 'sync';
   const llmAllowed = shouldAttemptLlm(input.tier, llmMode);
+  const now = new Date();
 
   if (!input.refresh) {
     const existing = await collections.careerVibeDaily.findOne(filter);
-    if (existing) {
+    if (existing && shouldReuseCachedCareerVibePlan({ doc: existing, llmAllowed, llmMode, now })) {
       return {
         item: toView(existing, true),
         cached: true,
@@ -694,7 +711,6 @@ export async function getOrCreateCareerVibePlanForUser(input: {
   const transit = await getOrCreateDailyTransitForUser(input.userId, input.date, input.logger, {
     aiSynergyMode: 'cache-only',
   });
-  const now = new Date();
   const base = buildCareerVibePlanView({
     dateKey,
     cached: false,

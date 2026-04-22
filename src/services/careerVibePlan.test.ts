@@ -4,6 +4,7 @@ import type { DailyTransitVibeDoc } from '../db/mongo.js';
 import {
   buildCareerVibePlanView,
   normalizeCareerVibePlanFromLlm,
+  shouldReuseCachedCareerVibePlan,
   toMorningBriefingPlanSnapshot,
 } from './careerVibePlan.js';
 
@@ -58,7 +59,7 @@ test('career vibe plan builder returns metrics without synthetic narrative copy'
 });
 
 test('career vibe plan normalizes valid llm payload and rejects sparse payloads', () => {
-  const valid = normalizeCareerVibePlanFromLlm({
+  const validPayload = {
     headline: 'Close the important loop',
     summary: 'Today works best when you turn one high-value priority into a finished, reviewed output before expanding your scope.',
     primaryAction: 'Finish one meaningful deliverable before opening a second workstream.',
@@ -68,12 +69,15 @@ test('career vibe plan normalizes valid llm payload and rejects sparse payloads'
     communicationStrategy: 'Use the peak window for specific asks and follow-ups, especially where decisions need a clear next step.',
     aiWorkStrategy: 'Ask AI for structured drafts, alternatives, and review checklists, then run a final human approval pass.',
     riskGuardrail: 'Keep one review gate before external sharing so speed does not outrun accuracy.',
-  });
+  };
+  const valid = normalizeCareerVibePlanFromLlm(validPayload);
 
   assert.equal(valid?.headline, 'Close the important loop');
   assert.deepEqual(valid?.bestFor.slice(0, 2), ['Deep work', 'AI drafting']);
 
   assert.equal(normalizeCareerVibePlanFromLlm({ headline: 'Thin' }), null);
+  assert.equal(normalizeCareerVibePlanFromLlm({ ...validPayload, summary: 'Too short for the dashboard card.' }), null);
+  assert.equal(normalizeCareerVibePlanFromLlm({ ...validPayload, summary: 'A'.repeat(181) }), null);
 });
 
 test('career vibe plan snapshot keeps only widget-safe fields when narrative is ready', () => {
@@ -116,4 +120,60 @@ test('career vibe plan snapshot keeps only widget-safe fields when narrative is 
   assert.equal(snapshot.primaryAction, readyPlan.plan.primaryAction);
   assert.equal(snapshot.peakWindow, readyPlan.plan.peakWindow);
   assert.equal(Object.keys(snapshot).includes('bestFor'), false);
+});
+
+test('career vibe plan cache does not keep stale pending narrative forever', () => {
+  const now = new Date('2026-04-13T10:01:30.000Z');
+
+  assert.equal(
+    shouldReuseCachedCareerVibePlan({
+      doc: {
+        narrativeStatus: 'pending',
+        updatedAt: new Date('2026-04-13T10:01:00.000Z'),
+      },
+      llmAllowed: true,
+      llmMode: 'background',
+      now,
+    }),
+    true,
+  );
+
+  assert.equal(
+    shouldReuseCachedCareerVibePlan({
+      doc: {
+        narrativeStatus: 'pending',
+        updatedAt: new Date('2026-04-13T10:00:00.000Z'),
+      },
+      llmAllowed: true,
+      llmMode: 'background',
+      now,
+    }),
+    false,
+  );
+
+  assert.equal(
+    shouldReuseCachedCareerVibePlan({
+      doc: {
+        narrativeStatus: 'pending',
+        updatedAt: new Date('2026-04-13T10:01:00.000Z'),
+      },
+      llmAllowed: true,
+      llmMode: 'sync',
+      now,
+    }),
+    false,
+  );
+
+  assert.equal(
+    shouldReuseCachedCareerVibePlan({
+      doc: {
+        narrativeStatus: 'failed',
+        updatedAt: new Date('2026-04-13T10:00:00.000Z'),
+      },
+      llmAllowed: true,
+      llmMode: 'background',
+      now,
+    }),
+    true,
+  );
 });
