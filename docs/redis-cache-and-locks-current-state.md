@@ -65,6 +65,7 @@ Gate:
 
 - `SCHEDULER_LOCKS_ENABLED`
 - defaults to `true` in `production` when unset
+- effective value is forced to `false` outside `production`, even if the env var is set
 
 Keys by scheduler:
 
@@ -114,6 +115,7 @@ Those items remain in planning doc: `docs/redis-cache-plan.md`.
 - `CACHE_JOB_METRICS_SNAPSHOT_ENABLED`
 - `CACHE_JOB_METRICS_SNAPSHOT_TTL_SECONDS`
 - `SCHEDULER_LOCKS_ENABLED`
+- `BIRTH_PROFILE_EDIT_LOCKS_ENABLED` (non-Redis profile edit lock gate; production-only effective value)
 - `SCHEDULER_LOCK_DAILY_TRANSIT_TTL_SECONDS`
 - `SCHEDULER_LOCK_JOB_METRICS_TTL_SECONDS`
 - `SCHEDULER_LOCK_BURNOUT_ALERTS_TTL_SECONDS`

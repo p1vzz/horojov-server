@@ -23,6 +23,13 @@ export function shouldAllowLocalSchedulerLockFallback(input: SchedulerRuntimePol
   return input.nodeEnv !== 'production';
 }
 
+export function resolveProductionOnlyLockEnabled(input: {
+  configured?: boolean;
+  nodeEnv: SchedulerRuntimePolicyInput['nodeEnv'];
+}) {
+  return input.nodeEnv === 'production' && (input.configured ?? true);
+}
+
 export function getWorkerSchedulerRuntimeIssues(input: SchedulerRuntimePolicyInput) {
   if (input.nodeEnv !== 'production') {
     return [] as string[];

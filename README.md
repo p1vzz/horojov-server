@@ -44,6 +44,7 @@ Worker runtime safety:
   - valid `REDIS_URL`
   - `SCHEDULER_LOCKS_ENABLED=true` (defaults to `true` when unset in production)
 - scheduler lock operations do not fall back to in-memory local locks in `production`
+- scheduler locks and birth-profile edit locks are effectively disabled outside `production`, even if their env flags are set
 
 Server default URL: `http://localhost:8787`
 

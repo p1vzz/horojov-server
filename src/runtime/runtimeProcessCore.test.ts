@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   getWorkerSchedulerRuntimeIssues,
+  resolveProductionOnlyLockEnabled,
   shouldAllowLocalSchedulerLockFallback,
   shouldAllowUnlockedSchedulers,
   shouldStartApiListener,
@@ -15,6 +16,14 @@ test('runtime process core resolves api and worker roles', () => {
   assert.equal(shouldStartSchedulers('worker'), true);
   assert.equal(shouldStartApiListener('all'), true);
   assert.equal(shouldStartSchedulers('all'), true);
+});
+
+test('runtime process core only enables lock env gates in production', () => {
+  assert.equal(resolveProductionOnlyLockEnabled({ nodeEnv: 'development', configured: true }), false);
+  assert.equal(resolveProductionOnlyLockEnabled({ nodeEnv: 'test', configured: true }), false);
+  assert.equal(resolveProductionOnlyLockEnabled({ nodeEnv: 'production', configured: undefined }), true);
+  assert.equal(resolveProductionOnlyLockEnabled({ nodeEnv: 'production', configured: true }), true);
+  assert.equal(resolveProductionOnlyLockEnabled({ nodeEnv: 'production', configured: false }), false);
 });
 
 test('runtime process core only requires redis-backed scheduler config in production', () => {

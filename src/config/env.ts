@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { z } from 'zod';
 import { getProductionEnvGuardIssues } from './productionEnvGuards.js';
+import { resolveProductionOnlyLockEnabled } from '../runtime/runtimeProcessCore.js';
 
 const optionalNonEmptyString = z.preprocess(
   (value) => {
@@ -138,6 +139,7 @@ const envSchema = z.object({
   CACHE_JOB_METRICS_SNAPSHOT_ENABLED: envBoolean.default(true),
   CACHE_JOB_METRICS_SNAPSHOT_TTL_SECONDS: z.coerce.number().int().min(1).max(600).default(15),
   SCHEDULER_LOCKS_ENABLED: optionalEnvBoolean,
+  BIRTH_PROFILE_EDIT_LOCKS_ENABLED: optionalEnvBoolean,
   SCHEDULER_LOCK_DAILY_TRANSIT_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(15 * 60),
   SCHEDULER_LOCK_JOB_METRICS_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(5 * 60),
   SCHEDULER_LOCK_BURNOUT_ALERTS_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(3 * 60),
@@ -236,7 +238,15 @@ export const env = {
   JOB_USAGE_LIMITS_ENABLED:
     parsedEnv.data.JOB_USAGE_LIMITS_ENABLED ?? parsedEnv.data.NODE_ENV !== 'development',
   SCHEDULER_LOCKS_ENABLED:
-    parsedEnv.data.SCHEDULER_LOCKS_ENABLED ?? parsedEnv.data.NODE_ENV === 'production',
+    resolveProductionOnlyLockEnabled({
+      nodeEnv: parsedEnv.data.NODE_ENV,
+      configured: parsedEnv.data.SCHEDULER_LOCKS_ENABLED,
+    }),
+  BIRTH_PROFILE_EDIT_LOCKS_ENABLED:
+    resolveProductionOnlyLockEnabled({
+      nodeEnv: parsedEnv.data.NODE_ENV,
+      configured: parsedEnv.data.BIRTH_PROFILE_EDIT_LOCKS_ENABLED,
+    }),
   JOB_METRICS_ENDPOINTS_ENABLED:
     parsedEnv.data.JOB_METRICS_ENDPOINTS_ENABLED ?? parsedEnv.data.NODE_ENV !== 'production',
   EFFECTIVE_EXPO_PUSH_ACCESS_TOKEN: parsedEnv.data.EXPO_PUSH_ACCESS_TOKEN ?? parsedEnv.data.EXPO_TOKEN ?? '',

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { env } from '../../config/env.js';
 import { getCollections } from '../../db/mongo.js';
 import { listAiSynergyHistory } from '../aiSynergy.js';
 import {
@@ -53,7 +54,11 @@ export function registerAstrologyProfileRoutes(
         admin1: profile.admin1 ?? null,
         updatedAt: profile.updatedAt.toISOString(),
       },
-      editLock: serializeBirthProfileEditLock(buildBirthProfileEditLockSnapshot(profile)),
+      editLock: serializeBirthProfileEditLock(
+        env.BIRTH_PROFILE_EDIT_LOCKS_ENABLED
+          ? buildBirthProfileEditLockSnapshot(profile)
+          : buildBirthProfileEditLockSnapshot(null),
+      ),
     };
   });
 
@@ -82,8 +87,10 @@ export function registerAstrologyProfileRoutes(
       },
     );
     const nextProfileHash = buildProfileHash(parsed.data);
-    const editPolicy = resolveBirthProfileEditPolicy(existingProfile, nextProfileHash);
-    if (editPolicy.blocked) {
+    const editPolicy = env.BIRTH_PROFILE_EDIT_LOCKS_ENABLED
+      ? resolveBirthProfileEditPolicy(existingProfile, nextProfileHash)
+      : null;
+    if (editPolicy?.blocked) {
       const editLock = serializeBirthProfileEditLock(editPolicy.lock);
       return reply.code(429).send({
         error: "Birth profile edit is temporarily locked.",
@@ -96,7 +103,7 @@ export function registerAstrologyProfileRoutes(
     }
 
     const profileHash = await upsertBirthProfile(auth.user._id, parsed.data, {
-      editLock: editPolicy.nextLock,
+      editLock: editPolicy?.nextLock ?? null,
     });
     if (existingProfile?.profileHash && existingProfile.profileHash !== profileHash) {
       await resetInterviewStrategyWindowAfterProfileChange({
@@ -110,7 +117,7 @@ export function registerAstrologyProfileRoutes(
         name: parsed.data.name ?? "",
       },
       editLock: serializeBirthProfileEditLock(
-        editPolicy.nextLock
+        editPolicy?.nextLock
           ? buildBirthProfileEditLockSnapshot(
               {
                 birthEditLockDurationDays: editPolicy.nextLock.durationDays,
@@ -118,7 +125,7 @@ export function registerAstrologyProfileRoutes(
                 birthEditLockLevel: editPolicy.nextLock.lockLevel,
               },
             )
-          : editPolicy.lock,
+          : editPolicy?.lock ?? buildBirthProfileEditLockSnapshot(null),
       ),
     };
   });
