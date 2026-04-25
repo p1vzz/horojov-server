@@ -5,7 +5,8 @@ import { getJobAnalysisVersions } from '../jobAnalysis.js';
 import { isCacheValid } from '../jobCachePolicy.js';
 import { validateAndCanonicalizeJobUrl } from '../jobUrl.js';
 import {
-  getCurrentUsageLimitState,
+  getCurrentJobUsageLimitSnapshot,
+  resolveJobScanDepth,
   resolveUserUsagePlan,
 } from '../jobUsageLimits.js';
 import {
@@ -117,10 +118,14 @@ export async function handleJobPreflight(
         });
 
   const plan = resolveUserUsagePlan(auth.user);
-  const limit = await getCurrentUsageLimitState({
+  const limits = await getCurrentJobUsageLimitSnapshot({
     userId: auth.user._id,
     plan,
     now,
+  });
+  const depthResolution = resolveJobScanDepth({
+    limits,
+    requestedDepth: 'auto',
   });
   const nextStage = analysisCache
     ? "done"
@@ -161,7 +166,9 @@ export async function handleJobPreflight(
         retryAt: negativeCache?.expiresAt.toISOString() ?? null,
       },
     },
-    limit,
+    limit: depthResolution.limit,
+    limits,
+    recommendedScanDepth: depthResolution.depth,
     versions,
   };
 }

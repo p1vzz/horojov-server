@@ -18,6 +18,7 @@ export type NormalizedJobPayload = {
   title: string;
   company: string | null;
   location: string | null;
+  salaryText: string | null;
   description: string;
   employmentType: string | null;
   datePosted: string | null;
@@ -116,6 +117,106 @@ function coerceString(value: unknown) {
   if (typeof value !== 'string') return null;
   const normalized = normalizeWhitespace(value);
   return normalized.length > 0 ? normalized : null;
+}
+
+function coerceNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/,/g, '');
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatSalaryAmount(value: number, currency: string | null) {
+  const rounded = value >= 100 ? Math.round(value) : Math.round(value * 100) / 100;
+  const formatted = rounded.toLocaleString('en-US', {
+    maximumFractionDigits: rounded >= 100 ? 0 : 2,
+  });
+  if (!currency || currency.toUpperCase() === 'USD') return `$${formatted}`;
+  return `${currency.toUpperCase()} ${formatted}`;
+}
+
+function formatSalaryUnit(value: unknown) {
+  const unit = coerceString(value)?.toUpperCase();
+  if (!unit) return null;
+  if (unit === 'YEAR' || unit === 'ANNUAL' || unit === 'ANNUALLY') return 'per year';
+  if (unit === 'MONTH' || unit === 'MONTHLY') return 'per month';
+  if (unit === 'WEEK' || unit === 'WEEKLY') return 'per week';
+  if (unit === 'DAY' || unit === 'DAILY') return 'per day';
+  if (unit === 'HOUR' || unit === 'HOURLY') return 'per hour';
+  return unit.toLowerCase();
+}
+
+function extractSalaryText(value: unknown): string | null {
+  const direct = coerceString(value);
+  if (direct) return direct;
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const parsed = extractSalaryText(entry);
+      if (parsed) return parsed;
+    }
+    return null;
+  }
+
+  if (!value || typeof value !== 'object') return null;
+  const obj = value as Record<string, unknown>;
+
+  const nestedDirect =
+    coerceString(obj.salaryText) ??
+    coerceString(obj.compensationText) ??
+    coerceString(obj.payRange) ??
+    coerceString(obj.salaryRange) ??
+    coerceString(obj.text);
+  if (nestedDirect) return nestedDirect;
+
+  const currency = coerceString(obj.currency) ?? coerceString(obj.salaryCurrency);
+  const salaryValue = obj.value;
+  const valueObj = salaryValue && typeof salaryValue === 'object' && !Array.isArray(salaryValue)
+    ? (salaryValue as Record<string, unknown>)
+    : null;
+  const min = coerceNumber(valueObj?.minValue ?? obj.minValue ?? obj.min);
+  const max = coerceNumber(valueObj?.maxValue ?? obj.maxValue ?? obj.max);
+  const exact = coerceNumber(valueObj?.value ?? salaryValue ?? obj.amount);
+  const unit = formatSalaryUnit(valueObj?.unitText ?? obj.unitText);
+
+  let amountText: string | null = null;
+  if (min !== null && max !== null) {
+    amountText = `${formatSalaryAmount(min, currency)}-${formatSalaryAmount(max, currency)}`;
+  } else if (exact !== null) {
+    amountText = formatSalaryAmount(exact, currency);
+  } else if (min !== null) {
+    amountText = `from ${formatSalaryAmount(min, currency)}`;
+  } else if (max !== null) {
+    amountText = `up to ${formatSalaryAmount(max, currency)}`;
+  }
+
+  return amountText && unit ? `${amountText} ${unit}` : amountText;
+}
+
+function extractPostedSalaryFromJobPosting(posting: Record<string, unknown>) {
+  return (
+    extractSalaryText(posting.baseSalary) ??
+    extractSalaryText(posting.estimatedSalary) ??
+    extractSalaryText(posting.salary) ??
+    extractSalaryText(posting.salaryRange) ??
+    extractSalaryText(posting.compensation) ??
+    null
+  );
+}
+
+function extractPostedSalaryFromGenericPayload(payload: Record<string, unknown>) {
+  return (
+    extractSalaryText(payload.salaryText) ??
+    extractSalaryText(payload.compensationText) ??
+    extractSalaryText(payload.payRange) ??
+    extractSalaryText(payload.salaryRange) ??
+    extractSalaryText(payload.salary) ??
+    extractSalaryText(payload.compensation) ??
+    extractSalaryText(payload.baseSalary) ??
+    null
+  );
 }
 
 function normalizeDateString(value: unknown) {
@@ -275,6 +376,7 @@ function normalizedFromJsonLd(input: {
     title,
     company,
     location,
+    salaryText: extractPostedSalaryFromJobPosting(posting),
     description,
     employmentType: coerceString(posting.employmentType),
     datePosted: normalizeDateString(posting.datePosted),
@@ -326,6 +428,7 @@ function normalizedFromGenericPayload(input: {
       coerceString(payload.city) ??
       coerceString(payload.workplaceType) ??
       null,
+    salaryText: extractPostedSalaryFromGenericPayload(payload),
     description,
     employmentType: coerceString(payload.employmentType) ?? coerceString(payload.type),
     datePosted: normalizeDateString(payload.datePosted ?? payload.postingDate),

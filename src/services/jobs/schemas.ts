@@ -8,6 +8,7 @@ export const preflightSchema = z.object({
 export const analyzeSchema = z.object({
   url: z.string().trim().min(8).max(2048),
   regenerate: z.coerce.boolean().default(false),
+  scanDepth: z.enum(['auto', 'lite', 'full']).default('auto'),
 });
 
 export const analyzeScreenshotsSchema = z.object({
@@ -29,4 +30,23 @@ export const metricsQuerySchema = z.object({
     .min(1)
     .max(24 * 14)
     .default(24),
+});
+
+export const historyQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(20).default(8),
+});
+
+const historyEntrySchema = z.object({
+  url: z.string().trim().min(1).max(2048),
+  analysis: z.record(z.string(), z.unknown()),
+  meta: z.object({
+    source: z.string().trim().min(1).max(64),
+    cached: z.coerce.boolean().default(false),
+    provider: z.string().trim().min(1).max(64).nullable().default(null),
+  }),
+  savedAt: z.string().trim().max(64).optional(),
+});
+
+export const historyImportSchema = z.object({
+  entries: z.array(historyEntrySchema).min(1).max(16),
 });

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getCollections } from '../../db/mongo.js';
 import {
   buildGeoQueryCandidates,
+  buildChartPromptPayload,
   callAstrologyApi,
   geoDetailsSchema,
   HOUSE_TYPE,
@@ -18,11 +19,64 @@ import {
 } from './astrologyShared.js';
 import { requireAstrologyAuth } from './astrologyRouteGuards.js';
 import type { AstrologyRouteDependencies } from './astrologyRouteTypes.js';
+import { buildMarketCareerContext } from '../marketCareerContext.js';
 
 export function registerAstrologyNatalChartRoutes(
   app: FastifyInstance,
   deps: AstrologyRouteDependencies,
 ) {
+  app.get("/market-career-context", async (request, reply) => {
+    const auth = await requireAstrologyAuth(request, reply, deps);
+    if (!auth) return;
+
+    const resolvedInput = await resolveNatalInputForUser(auth.user._id, undefined);
+    if (!resolvedInput.ok) {
+      if (resolvedInput.code === 404) {
+        return reply.code(404).send({
+          error: "Birth profile not found. Submit onboarding details first.",
+          code: "birth_profile_missing",
+        });
+      }
+      return reply.code(400).send({
+        error: "Invalid request payload",
+        details: resolvedInput.details,
+      });
+    }
+
+    const collections = await getCollections();
+    const natalChart = await collections.natalCharts.findOne(
+      {
+        userId: auth.user._id,
+        profileHash: resolvedInput.profileHash,
+      },
+      { projection: { chart: 1 } },
+    );
+
+    if (!natalChart) {
+      return reply.code(404).send({
+        error: "Natal chart not found. Generate chart first.",
+        code: "natal_chart_missing",
+      });
+    }
+
+    const parsedChart = westernChartSchema.safeParse(natalChart.chart);
+    if (!parsedChart.success) {
+      request.log.error(
+        { issues: parsedChart.error.issues },
+        "cached natal chart validation failed for market career context",
+      );
+      return reply.code(502).send({
+        error: "Cached natal chart has invalid format",
+        code: "natal_chart_invalid",
+      });
+    }
+
+    return buildMarketCareerContext({
+      chartPayload: buildChartPromptPayload(parsedChart.data),
+      logger: request.log,
+    });
+  });
+
   app.post("/natal-chart", async (request, reply) => {
     const auth = await requireAstrologyAuth(request, reply, deps);
     if (!auth) return;

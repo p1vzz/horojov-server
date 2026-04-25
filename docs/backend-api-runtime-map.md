@@ -1,6 +1,6 @@
 # Backend API And Runtime Map
 **Status:** Active  
-**Last synced:** 2026-04-12
+**Last synced:** 2026-04-25
 
 ## Goal
 
@@ -17,6 +17,8 @@ Provide one current map of backend API surface and runtime orchestration (startu
   - `/api/cities`
   - `/api/astrology`
   - `/api/jobs`
+  - `/api/market`
+  - `/api/public/market`
   - `/api/billing`
   - `/api/notifications`
 
@@ -44,6 +46,7 @@ Provide one current map of backend API surface and runtime orchestration (startu
 - `PUT /birth-profile`
   - in production when `BIRTH_PROFILE_EDIT_LOCKS_ENABLED` is effectively true, profile-changing updates are rate locked per user: first successful edit locks the next edit for 1 day, then 2/4/8/16/30 days on later successful edits; blocked edits return `429` with `code=birth_profile_edit_locked` and `editLock`
   - outside production, birth-profile edit locks are effectively disabled even if the env flag is set
+  - optional `currentJobTitle` now lives on the same profile payload for app-wide personalization, but it stays outside `profileHash` and does not trigger birth-profile edit locks by itself
 - `POST /natal-chart`
 - `GET /daily-transit`
   - query: `includeAiSynergy=true|false`; default uses cached AI Synergy only and does not generate an AI narrative synchronously
@@ -53,17 +56,48 @@ Provide one current map of backend API surface and runtime orchestration (startu
 - `GET /full-natal-analysis/progress` (premium)
 - `GET /career-insights`
 - `GET /discover-roles`
-  - query: `query`, `limit`, `searchLimit`, `refresh`
+  - query: `query`, `limit`, `searchLimit`, `refresh`, `rankingMode=fit|opportunity`
   - optional deferred scoring for mobile search: `deferSearchScores=true` returns search rows without scores; `scoreSlug=<role-slug>` returns the deterministic score for one selected row
+  - response includes optional `context.currentJob`; recommendations/search rows include optional `detail` (`whyFit`, `realityCheck`, `entryBarrier`, `transitionMap`, `bestAlternative`) plus optional market enrichment and `opportunityScore`
+  - market enrichment failures degrade to fit-only role cards; role-detail sections do not depend on market success
+- `GET /discover-roles/current-job`
+- `PUT /discover-roles/current-job`
+- `DELETE /discover-roles/current-job`
+  - compatibility shim over the shared birth-profile `currentJobTitle` field, with best-effort matching to the role catalog
+- `GET /discover-roles/shortlist`
+- `PUT /discover-roles/shortlist/:slug`
+- `DELETE /discover-roles/shortlist/:slug`
+  - shortlist rows sync the saved mobile compare list across devices; payload mirrors the mobile shortlist card shape (`role`, `domain`, score labels, tags, market snapshot, `detail`, `savedAt`)
 
 ### Jobs (`/api/jobs`)
 
 - `GET /limits`
+  - returns legacy Full-compatible `limit` plus `limits.lite` and `limits.full`
 - `GET /metrics`
 - `GET /alerts`
 - `POST /preflight`
+  - returns cache state, `recommendedScanDepth`, and Lite/Full usage snapshot
 - `POST /analyze`
+  - accepts `scanDepth=auto|lite|full`; `auto` prefers Full then falls back to Lite
+  - returns `scanDepth`, `requestedScanDepth`, `usage.depth`, `usage.limits`, optional `market`, and nullable `job.salaryText`
 - `POST /analyze-screenshots`
+  - Full-only for now; returns `scanDepth=full` and market enrichment when available
+
+### Market (`/api/market`)
+
+- `GET /occupation-insight`
+  - query: `keyword` required, `location` default `US`, `refresh=true|false`
+  - requires current app auth session
+  - returns normalized CareerOneStop/O*NET occupation facts, salary range, outlook, skills, labels, and source attribution
+  - raw provider credentials remain server-side; response includes attribution metadata and `logoRequired` flags
+
+### Public Market (`/api/public/market`)
+
+- `GET /occupation-insight`
+  - query: `keyword` required, `location` default `US`
+  - no auth; used by the public compliance surface in `../horojob-landing`
+  - mirrors the normalized occupation insight payload from `/api/market/occupation-insight`
+  - forces cache-safe behavior (`refresh=false`) and keeps provider credentials server-side
 
 ### Billing (`/api/billing`)
 
@@ -139,4 +173,5 @@ Provide one current map of backend API surface and runtime orchestration (startu
 - `src/app.ts`
 - `src/routes/*.ts`
 - `src/services/astrology/*Routes.ts`
+- `src/services/marketData/*`
 - `src/db/mongo.ts`

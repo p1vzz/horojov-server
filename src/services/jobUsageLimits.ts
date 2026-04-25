@@ -3,9 +3,12 @@ import { env } from '../config/env.js';
 import { getCollections, type JobUsageLimitsDoc, type UserDoc } from '../db/mongo.js';
 
 export type UsagePlan = 'free' | 'premium';
+export type JobScanDepth = 'lite' | 'full';
+export type JobScanDepthRequest = 'auto' | JobScanDepth;
 
 export type UsageLimitState = {
   plan: UsagePlan;
+  depth: JobScanDepth;
   period: 'rolling_7_days' | 'daily_utc';
   limit: number;
   used: number;
@@ -14,9 +17,30 @@ export type UsageLimitState = {
   canProceed: boolean;
 };
 
-const FREE_LIMIT = 1;
-const FREE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const PREMIUM_DAILY_LIMIT = 10;
+export type JobUsageLimitSnapshot = {
+  plan: UsagePlan;
+  lite: UsageLimitState;
+  full: UsageLimitState;
+};
+
+export type ResolvedJobScanDepth =
+  | {
+      canProceed: true;
+      depth: JobScanDepth;
+      limit: UsageLimitState;
+      limits: JobUsageLimitSnapshot;
+    }
+  | {
+      canProceed: false;
+      depth: JobScanDepth;
+      limit: UsageLimitState;
+      limits: JobUsageLimitSnapshot;
+    };
+
+const LEGACY_FREE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+export const JOB_LITE_DAILY_LIMIT = 30;
+export const JOB_FREE_FULL_DAILY_LIMIT = 1;
+export const JOB_PREMIUM_FULL_DAILY_LIMIT = 10;
 
 function toUtcDateKey(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -40,77 +64,103 @@ function ensureNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-export function resolveUserUsagePlan(user: UserDoc): UsagePlan {
-  return fromUser(user);
-}
-
-function computeFreeState(doc: JobUsageLimitsDoc | null, now: Date): UsageLimitState {
-  const startedAt = doc?.freeWindowStartedAt ?? null;
-  const count = ensureNumber(doc?.freeWindowSuccessCount);
-
-  if (!startedAt) {
-    return {
-      plan: 'free',
-      period: 'rolling_7_days',
-      limit: FREE_LIMIT,
-      used: 0,
-      remaining: FREE_LIMIT,
-      nextAvailableAt: null,
-      canProceed: true,
-    };
-  }
-
-  const expiresAt = new Date(startedAt.getTime() + FREE_WINDOW_MS);
-  if (now >= expiresAt) {
-    return {
-      plan: 'free',
-      period: 'rolling_7_days',
-      limit: FREE_LIMIT,
-      used: 0,
-      remaining: FREE_LIMIT,
-      nextAvailableAt: null,
-      canProceed: true,
-    };
-  }
-
-  const used = clampInt(count, 0, FREE_LIMIT);
-  const remaining = Math.max(0, FREE_LIMIT - used);
-  return {
-    plan: 'free',
-    period: 'rolling_7_days',
-    limit: FREE_LIMIT,
-    used,
-    remaining,
-    nextAvailableAt: remaining > 0 ? null : expiresAt.toISOString(),
-    canProceed: remaining > 0,
-  };
-}
-
-function computePremiumState(doc: JobUsageLimitsDoc | null, now: Date): UsageLimitState {
-  const todayKey = toUtcDateKey(now);
-  const usedRaw = doc?.premiumDateKey === todayKey ? ensureNumber(doc?.premiumDailyCount) : 0;
-  const used = clampInt(usedRaw, 0, PREMIUM_DAILY_LIMIT);
-  const remaining = Math.max(0, PREMIUM_DAILY_LIMIT - used);
-
-  return {
-    plan: 'premium',
-    period: 'daily_utc',
-    limit: PREMIUM_DAILY_LIMIT,
-    used,
-    remaining,
-    nextAvailableAt: remaining > 0 ? null : startOfNextUtcDay(now).toISOString(),
-    canProceed: remaining > 0,
-  };
-}
-
 function clampInt(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.trunc(value)));
 }
 
-function unlimitedState(plan: UsagePlan): UsageLimitState {
+export function resolveUserUsagePlan(user: UserDoc): UsagePlan {
+  return fromUser(user);
+}
+
+function buildDailyState(input: {
+  plan: UsagePlan;
+  depth: JobScanDepth;
+  limit: number;
+  dateKey: string | null | undefined;
+  count: number | null | undefined;
+  todayKey: string;
+  now: Date;
+}): UsageLimitState {
+  const usedRaw = input.dateKey === input.todayKey ? ensureNumber(input.count) : 0;
+  const used = clampInt(usedRaw, 0, input.limit);
+  const remaining = Math.max(0, input.limit - used);
+
+  return {
+    plan: input.plan,
+    depth: input.depth,
+    period: 'daily_utc',
+    limit: input.limit,
+    used,
+    remaining,
+    nextAvailableAt: remaining > 0 ? null : startOfNextUtcDay(input.now).toISOString(),
+    canProceed: remaining > 0,
+  };
+}
+
+function legacyFullUsage(doc: JobUsageLimitsDoc | null, plan: UsagePlan, todayKey: string, now: Date) {
+  if (!doc) return { dateKey: null, count: 0 };
+  if (doc.fullDateKey) {
+    return {
+      dateKey: doc.fullDateKey,
+      count: ensureNumber(doc.fullDailyCount),
+    };
+  }
+  if (plan === 'premium' && doc.premiumDateKey === todayKey) {
+    return {
+      dateKey: doc.premiumDateKey,
+      count: ensureNumber(doc.premiumDailyCount),
+    };
+  }
+  if (plan === 'free' && doc.freeWindowStartedAt) {
+    const legacyWindowActive = now.getTime() < doc.freeWindowStartedAt.getTime() + LEGACY_FREE_WINDOW_MS;
+    return {
+      dateKey:
+        legacyWindowActive && ensureNumber(doc.freeWindowSuccessCount) > 0
+          ? toUtcDateKey(doc.freeWindowStartedAt)
+          : null,
+      count: legacyWindowActive ? ensureNumber(doc.freeWindowSuccessCount) : 0,
+    };
+  }
+  return { dateKey: null, count: 0 };
+}
+
+export function computeJobUsageLimitSnapshot(input: {
+  doc: JobUsageLimitsDoc | null;
+  plan: UsagePlan;
+  now: Date;
+}): JobUsageLimitSnapshot {
+  const plan = resolvePlan(input.plan);
+  const todayKey = toUtcDateKey(input.now);
+  const fullLegacy = legacyFullUsage(input.doc, plan, todayKey, input.now);
+
   return {
     plan,
-    period: plan === 'premium' ? 'daily_utc' : 'rolling_7_days',
+    lite: buildDailyState({
+      plan,
+      depth: 'lite',
+      limit: JOB_LITE_DAILY_LIMIT,
+      dateKey: input.doc?.liteDateKey,
+      count: input.doc?.liteDailyCount,
+      todayKey,
+      now: input.now,
+    }),
+    full: buildDailyState({
+      plan,
+      depth: 'full',
+      limit: plan === 'premium' ? JOB_PREMIUM_FULL_DAILY_LIMIT : JOB_FREE_FULL_DAILY_LIMIT,
+      dateKey: fullLegacy.dateKey,
+      count: fullLegacy.count,
+      todayKey,
+      now: input.now,
+    }),
+  };
+}
+
+function unlimitedState(plan: UsagePlan, depth: JobScanDepth): UsageLimitState {
+  return {
+    plan,
+    depth,
+    period: 'daily_utc',
     limit: 1_000_000,
     used: 0,
     remaining: 1_000_000,
@@ -119,25 +169,83 @@ function unlimitedState(plan: UsagePlan): UsageLimitState {
   };
 }
 
+function unlimitedSnapshot(plan: UsagePlan): JobUsageLimitSnapshot {
+  return {
+    plan,
+    lite: unlimitedState(plan, 'lite'),
+    full: unlimitedState(plan, 'full'),
+  };
+}
+
 async function getUsageDoc(userId: ObjectId) {
   const collections = await getCollections();
   return collections.jobUsageLimits.findOne({ userId });
 }
 
-export async function getCurrentUsageLimitState(input: { userId: ObjectId; plan: UsagePlan; now?: Date }) {
+export async function getCurrentJobUsageLimitSnapshot(input: {
+  userId: ObjectId;
+  plan: UsagePlan;
+  now?: Date;
+}) {
   const now = input.now ?? new Date();
   const plan = resolvePlan(input.plan);
   if (!env.JOB_USAGE_LIMITS_ENABLED) {
-    return unlimitedState(plan);
+    return unlimitedSnapshot(plan);
   }
 
   const doc = await getUsageDoc(input.userId);
-  return plan === 'premium' ? computePremiumState(doc, now) : computeFreeState(doc, now);
+  return computeJobUsageLimitSnapshot({ doc, plan, now });
 }
 
-export async function incrementUsageAfterSuccessfulProviderCall(input: {
+export async function getCurrentUsageLimitState(input: { userId: ObjectId; plan: UsagePlan; now?: Date }) {
+  const snapshot = await getCurrentJobUsageLimitSnapshot(input);
+  return snapshot.full;
+}
+
+export function resolveJobScanDepth(input: {
+  limits: JobUsageLimitSnapshot;
+  requestedDepth?: JobScanDepthRequest;
+}): ResolvedJobScanDepth {
+  const requestedDepth = input.requestedDepth ?? 'auto';
+  if (requestedDepth === 'lite') {
+    return {
+      canProceed: input.limits.lite.canProceed,
+      depth: 'lite',
+      limit: input.limits.lite,
+      limits: input.limits,
+    };
+  }
+
+  if (requestedDepth === 'full') {
+    return {
+      canProceed: input.limits.full.canProceed,
+      depth: 'full',
+      limit: input.limits.full,
+      limits: input.limits,
+    };
+  }
+
+  if (input.limits.full.canProceed) {
+    return {
+      canProceed: true,
+      depth: 'full',
+      limit: input.limits.full,
+      limits: input.limits,
+    };
+  }
+
+  return {
+    canProceed: input.limits.lite.canProceed,
+    depth: 'lite',
+    limit: input.limits.lite,
+    limits: input.limits,
+  };
+}
+
+export async function incrementUsageAfterSuccessfulScan(input: {
   userId: ObjectId;
   plan: UsagePlan;
+  depth: JobScanDepth;
   now?: Date;
 }) {
   if (!env.JOB_USAGE_LIMITS_ENABLED) {
@@ -146,75 +254,76 @@ export async function incrementUsageAfterSuccessfulProviderCall(input: {
 
   const now = input.now ?? new Date();
   const plan = resolvePlan(input.plan);
+  const todayKey = toUtcDateKey(now);
   const collections = await getCollections();
   const existing = await collections.jobUsageLimits.findOne({ userId: input.userId });
 
-  if (plan === 'free') {
-    const startedAt = existing?.freeWindowStartedAt ?? null;
-    const expired = !startedAt || now.getTime() >= startedAt.getTime() + FREE_WINDOW_MS;
-
-    if (expired) {
-      await collections.jobUsageLimits.updateOne(
-        { userId: input.userId },
-        {
-          $set: {
-            plan,
-            freeWindowStartedAt: now,
-            freeWindowSuccessCount: 1,
-            updatedAt: now,
-          },
-          $setOnInsert: {
-            _id: new ObjectId(),
-            userId: input.userId,
-            premiumDateKey: null,
-            premiumDailyCount: 0,
-            createdAt: now,
-          },
-        },
-        { upsert: true }
-      );
-      return;
-    }
-
-    await collections.jobUsageLimits.updateOne(
-      { userId: input.userId },
-      {
-        $set: { plan, updatedAt: now },
-        $inc: { freeWindowSuccessCount: 1 },
-      }
-    );
-    return;
-  }
-
-  const todayKey = toUtcDateKey(now);
-  if (!existing || existing.premiumDateKey !== todayKey) {
+  if (input.depth === 'lite') {
+    const resetCounter = !existing || existing.liteDateKey !== todayKey;
     await collections.jobUsageLimits.updateOne(
       { userId: input.userId },
       {
         $set: {
           plan,
-          premiumDateKey: todayKey,
-          premiumDailyCount: 1,
+          liteDateKey: todayKey,
+          liteDailyCount: resetCounter ? 1 : ensureNumber(existing.liteDailyCount) + 1,
           updatedAt: now,
         },
-        $setOnInsert: {
-          _id: new ObjectId(),
-          userId: input.userId,
-          freeWindowStartedAt: null,
-          freeWindowSuccessCount: 0,
-          createdAt: now,
-        },
+        $setOnInsert: buildUsageSetOnInsert(input.userId, now),
       },
-      { upsert: true }
+      { upsert: true },
     );
     return;
   }
 
+  const resetCounter = !existing || existing.fullDateKey !== todayKey;
   await collections.jobUsageLimits.updateOne(
     { userId: input.userId },
     {
-      $set: { plan, updatedAt: now },
-      $inc: { premiumDailyCount: 1 },
-    }
+      $set: {
+        plan,
+        fullDateKey: todayKey,
+        fullDailyCount: resetCounter ? 1 : ensureNumber(existing.fullDailyCount) + 1,
+        premiumDateKey: todayKey,
+        premiumDailyCount: resetCounter ? 1 : ensureNumber(existing.premiumDailyCount) + 1,
+        freeWindowStartedAt: plan === 'free' ? now : (existing?.freeWindowStartedAt ?? null),
+        freeWindowSuccessCount:
+          plan === 'free'
+            ? resetCounter
+              ? 1
+              : ensureNumber(existing?.freeWindowSuccessCount) + 1
+            : ensureNumber(existing?.freeWindowSuccessCount),
+        updatedAt: now,
+      },
+      $setOnInsert: buildUsageSetOnInsert(input.userId, now),
+    },
+    { upsert: true },
   );
+}
+
+export async function incrementUsageAfterSuccessfulProviderCall(input: {
+  userId: ObjectId;
+  plan: UsagePlan;
+  now?: Date;
+}) {
+  await incrementUsageAfterSuccessfulScan({
+    ...input,
+    depth: 'full',
+  });
+}
+
+function buildUsageSetOnInsert(userId: ObjectId, now: Date) {
+  return {
+    _id: new ObjectId(),
+    userId,
+    freeWindowStartedAt: null,
+    freeWindowSuccessCount: 0,
+    premiumDateKey: null,
+    premiumDailyCount: 0,
+    liteDateKey: null,
+    liteDailyCount: 0,
+    fullDateKey: null,
+    fullDailyCount: 0,
+    createdAt: now,
+  };
 }

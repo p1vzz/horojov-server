@@ -13,11 +13,14 @@ import {
   parseJobFromScreenshots,
 } from '../jobScreenshotParser.js';
 import {
-  getCurrentUsageLimitState,
-  incrementUsageAfterSuccessfulProviderCall,
+  getCurrentJobUsageLimitSnapshot,
+  incrementUsageAfterSuccessfulScan,
+  resolveJobScanDepth,
   resolveUserUsagePlan,
 } from '../jobUsageLimits.js';
 import { isSupportedSource } from './common.js';
+import { upsertJobScanHistory } from './historyStore.js';
+import { buildJobMarketInsight } from './marketEnrichment.js';
 import { analyzeScreenshotsSchema } from './schemas.js';
 
 export async function handleJobAnalyzeScreenshots(
@@ -68,16 +71,22 @@ export async function handleJobAnalyzeScreenshots(
   }
 
   const plan = resolveUserUsagePlan(auth.user);
-  const limit = await getCurrentUsageLimitState({
+  const limits = await getCurrentJobUsageLimitSnapshot({
     userId: auth.user._id,
     plan,
     now,
   });
-  if (!limit.canProceed) {
+  const depthResolution = resolveJobScanDepth({
+    limits,
+    requestedDepth: 'full',
+  });
+  if (!depthResolution.canProceed) {
     return reply.code(429).send({
       error: "Parse limit reached",
       code: "usage_limit_reached",
-      limit,
+      scanDepth: 'full',
+      limit: depthResolution.limit,
+      limits,
     });
   }
 
@@ -133,6 +142,7 @@ export async function handleJobAnalyzeScreenshots(
     title: parsedScreenshot.job.title,
     company: parsedScreenshot.job.company,
     location: parsedScreenshot.job.location,
+    salaryText: null,
     description: parsedScreenshot.job.description,
     employmentType: parsedScreenshot.job.employmentType,
     datePosted: null,
@@ -145,21 +155,28 @@ export async function handleJobAnalyzeScreenshots(
     features: parsedFeatures,
     natalChart: natalChart.chart,
   });
+  const market = await buildJobMarketInsight({
+    normalizedJob: normalizedFromScreenshots,
+    log: request.log,
+  });
 
-  await incrementUsageAfterSuccessfulProviderCall({
+  await incrementUsageAfterSuccessfulScan({
     userId: auth.user._id,
     plan,
+    depth: 'full',
     now,
   });
-  const postLimit = await getCurrentUsageLimitState({
+  const postLimits = await getCurrentJobUsageLimitSnapshot({
     userId: auth.user._id,
     plan,
     now: new Date(),
   });
 
-  return {
+  const response = {
     analysisId: new ObjectId().toHexString(),
     status: "done",
+    scanDepth: "full",
+    requestedScanDepth: "full",
     providerUsed: "screenshot_vision",
     cached: false,
     cache: {
@@ -169,8 +186,10 @@ export async function handleJobAnalyzeScreenshots(
     },
     usage: {
       plan,
+      depth: "full",
       incremented: true,
-      limit: postLimit,
+      limit: postLimits.full,
+      limits: postLimits,
     },
     versions: {
       ...versions,
@@ -182,10 +201,12 @@ export async function handleJobAnalyzeScreenshots(
     jobSummary: analysisResult.jobSummary,
     tags: analysisResult.tags,
     descriptors: analysisResult.descriptors,
+    market,
     job: {
       title: parsedScreenshot.job.title,
       company: parsedScreenshot.job.company,
       location: parsedScreenshot.job.location,
+      salaryText: null,
       employmentType: parsedScreenshot.job.employmentType,
       source: parsedScreenshot.sourceHint ?? "manual",
     },
@@ -195,4 +216,20 @@ export async function handleJobAnalyzeScreenshots(
       reason: parsedScreenshot.reason,
     },
   };
+  await upsertJobScanHistory({
+    userId: auth.user._id,
+    url: 'Screenshot Upload',
+    analysis: response,
+    meta: {
+      source: parsedScreenshot.sourceHint ?? 'manual',
+      cached: response.cached,
+      provider: response.providerUsed,
+    },
+    savedAt: now,
+    origin: 'screenshots',
+    canonicalUrlHash: null,
+    jobContentHash: null,
+    profileHash: profile.profileHash,
+  });
+  return response;
 }

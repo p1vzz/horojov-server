@@ -6,6 +6,10 @@ import type {
   MongoCollections,
 } from '../db/mongo.js';
 import { getCollections } from '../db/mongo.js';
+import { getOccupationInsight } from './marketData/occupationInsight.js';
+import { MarketProviderError } from './marketData/providerErrors.js';
+import type { OccupationInsightResponse } from './marketData/types.js';
+import type { DiscoverRoleCurrentJobPayload } from './astrology/discoverRoleCurrentJobStore.js';
 
 type TraitKey = keyof DiscoverRoleTraitVectorDoc;
 
@@ -37,6 +41,56 @@ type RankedRole = {
   tags: string[];
 };
 
+export type DiscoverRoleDetail = {
+  whyFit: {
+    summary: string;
+    bullets: string[];
+    topTraits: string[];
+  };
+  realityCheck: {
+    summary: string;
+    tasks: string[];
+    workContext: string[];
+    toolThemes: string[];
+  };
+  entryBarrier: {
+    level: 'accessible' | 'moderate' | 'specialized' | 'high';
+    label: string;
+    summary: string;
+    signals: string[];
+  };
+  transitionMap: DiscoverRoleTransitionPath[];
+  bestAlternative: DiscoverRoleBestAlternative | null;
+};
+
+export type DiscoverRoleDecisionRole = {
+  slug: string;
+  title: string;
+  domain: string;
+  fitScore: number;
+  fitLabel: string;
+  barrier: {
+    level: DiscoverRoleDetail['entryBarrier']['level'];
+    label: string;
+  };
+};
+
+export type DiscoverRoleTransitionPath = {
+  lane: 'best_match' | 'easier_entry' | 'higher_ceiling';
+  label: string;
+  summary: string;
+  role: DiscoverRoleDecisionRole;
+};
+
+export type DiscoverRoleBestAlternative = {
+  headline: string;
+  summary: string;
+  reasons: string[];
+  role: DiscoverRoleDecisionRole;
+};
+
+export type DiscoverRoleRankingMode = 'fit' | 'opportunity';
+
 const TRAIT_KEYS: TraitKey[] = [
   'analytical',
   'creative',
@@ -61,6 +115,209 @@ const TRAIT_LABELS: Record<TraitKey, string> = {
   detail: 'Detail-Oriented',
   research: 'Research',
   communication: 'Communicative',
+};
+
+const TRAIT_EXPLANATIONS: Record<TraitKey, string> = {
+  analytical: 'structured problem solving and pattern recognition',
+  creative: 'original thinking and concept shaping',
+  leadership: 'direction-setting and ownership under pressure',
+  technical: 'systems thinking and hands-on execution',
+  people: 'relationship building and user sensitivity',
+  business: 'tradeoff judgment and commercial intuition',
+  operations: 'turning plans into reliable execution',
+  detail: 'precision, follow-through, and quality control',
+  research: 'digging deeper before making decisions',
+  communication: 'explaining, aligning, and influencing clearly',
+};
+
+type DiscoverRoleRealityTemplate = {
+  summary: string;
+  tasks: string[];
+  workContext: string[];
+  toolThemes: string[];
+  barrierLevel: DiscoverRoleDetail['entryBarrier']['level'];
+  barrierSignals: string[];
+};
+
+const GENERAL_DISCOVER_ROLE_REALITY_TEMPLATE: DiscoverRoleRealityTemplate = {
+  summary: 'Expect a blend of practical execution, communication, and adaptation as the work becomes more specific.',
+  tasks: [
+    'Turn expectations into repeatable execution.',
+    'Communicate clearly enough for others to act with you.',
+    'Learn the role by doing, not only by reading.',
+  ],
+  workContext: ['Execution under feedback', 'Collaboration', 'Gradual skill-building'],
+  toolThemes: ['Documentation', 'Communication tools', 'Tracking systems'],
+  barrierLevel: 'moderate',
+  barrierSignals: [
+    'Transferable evidence usually matters more than perfect title history.',
+    'Entry gets easier when you can point to concrete examples of similar work.',
+    'Teams still look for signs that you can ramp without heavy supervision.',
+  ],
+};
+
+const DOMAIN_REALITY_TEMPLATES: Record<string, DiscoverRoleRealityTemplate> = {
+  'Product & Strategy': {
+    summary: 'Most days mix prioritization, ambiguity management, and cross-functional decision making.',
+    tasks: [
+      'Turn vague goals into concrete priorities and tradeoffs.',
+      'Align product, design, engineering, or business partners around the next move.',
+      'Keep execution pointed at outcomes rather than only activity.',
+    ],
+    workContext: ['Cross-functional tradeoffs', 'High ambiguity', 'Stakeholder alignment'],
+    toolThemes: ['Roadmaps', 'Research notes', 'Delivery tracking'],
+    barrierLevel: 'specialized',
+    barrierSignals: [
+      'Usually rewards prior context in a product, business, or operational lane.',
+      'Credibility often comes from decision quality, not only title history.',
+      'Switching in is easier with portfolio evidence or adjacent ownership experience.',
+    ],
+  },
+  'Data & Technology': {
+    summary: 'The work usually alternates between deep focus, technical problem solving, and iterative delivery.',
+    tasks: [
+      'Break complex systems or product needs into concrete technical work.',
+      'Debug, refine, and ship reliable solutions under changing constraints.',
+      'Translate abstract requirements into working systems people can use.',
+    ],
+    workContext: ['Deep focus blocks', 'Rapid iteration', 'Technical collaboration'],
+    toolThemes: ['Code tools', 'Version control', 'Issue tracking'],
+    barrierLevel: 'specialized',
+    barrierSignals: [
+      'Usually expects proof of hands-on execution, not only interest.',
+      'Portfolio, shipped work, or strong technical reps lower switching risk.',
+      'Tool fluency matters early because teams look for practical ramp speed.',
+    ],
+  },
+  Engineering: {
+    summary: 'Expect a mix of analytical rigor, technical execution, and longer-horizon problem solving.',
+    tasks: [
+      'Design solutions that hold up under real-world constraints.',
+      'Balance technical precision with delivery timelines.',
+      'Review systems, failures, or requirements before committing to an approach.',
+    ],
+    workContext: ['Precision under constraints', 'System-level thinking', 'Review-heavy collaboration'],
+    toolThemes: ['Design tools', 'Simulation or build tools', 'Technical documentation'],
+    barrierLevel: 'specialized',
+    barrierSignals: [
+      'The ramp is easier with disciplined technical foundations already in place.',
+      'Teams often expect evidence of problem-solving depth before trusting larger scope.',
+      'Adjacent technical work helps more than generic generalist experience.',
+    ],
+  },
+  'Business & Finance': {
+    summary: 'Daily work tends to center on structured analysis, risk framing, and decision support.',
+    tasks: [
+      'Analyze metrics, financial patterns, or operational signals.',
+      'Turn messy inputs into recommendations leaders can act on.',
+      'Document assumptions, controls, and tradeoffs clearly.',
+    ],
+    workContext: ['Metric-driven review', 'Stakeholder presentations', 'Risk and process control'],
+    toolThemes: ['Spreadsheets', 'Reporting tools', 'Documentation'],
+    barrierLevel: 'moderate',
+    barrierSignals: [
+      'Switching is easier when you can show disciplined analysis or business judgment.',
+      'Precision and trust matter as much as raw pace.',
+      'Domain language and stakeholder confidence usually improve access to stronger roles.',
+    ],
+  },
+  'Creative & Media': {
+    summary: 'The work blends taste, iteration, and clear translation of ideas into outputs other people can react to.',
+    tasks: [
+      'Shape concepts into concrete visual, written, or research outputs.',
+      'Iterate fast from feedback without losing the core idea.',
+      'Balance originality with audience, brand, or user constraints.',
+    ],
+    workContext: ['Feedback cycles', 'Portfolio-driven proof', 'Ambiguous briefs'],
+    toolThemes: ['Creative suites', 'Prototyping', 'Content workflows'],
+    barrierLevel: 'moderate',
+    barrierSignals: [
+      'A visible body of work usually matters more than abstract interest.',
+      'Taste, communication, and iteration speed all affect credibility.',
+      'Adjacent roles can be easier bridges than cold entry into senior creative scope.',
+    ],
+  },
+  'Sales & Growth': {
+    summary: 'Expect externally-facing work, fast feedback loops, and constant pressure to turn effort into movement.',
+    tasks: [
+      'Create momentum with customers, audiences, or revenue-driving systems.',
+      'Adjust messaging and tactics based on live feedback.',
+      'Balance relationship-building with measurable performance targets.',
+    ],
+    workContext: ['Fast feedback loops', 'External communication', 'Performance pressure'],
+    toolThemes: ['CRM', 'Campaign tools', 'Pipeline tracking'],
+    barrierLevel: 'moderate',
+    barrierSignals: [
+      'Communication proof and visible execution usually matter early.',
+      'Switching in is easier when you already operate close to customer or revenue workflows.',
+      'Consistency under pressure matters more than perfect credentials.',
+    ],
+  },
+  'Science & Research': {
+    summary: 'The work rewards patience, deeper investigation, and comfort with uncertainty before results become clear.',
+    tasks: [
+      'Study patterns, evidence, or hypotheses before acting.',
+      'Document findings clearly enough for others to trust the conclusion.',
+      'Spend longer cycles refining methods, not only outputs.',
+    ],
+    workContext: ['Evidence-first decisions', 'Longer feedback cycles', 'Methodical review'],
+    toolThemes: ['Research workflows', 'Data tools', 'Documentation'],
+    barrierLevel: 'specialized',
+    barrierSignals: [
+      'Most switches require real subject-matter depth, not only curiosity.',
+      'The ramp often depends on method quality and domain fluency.',
+      'Demonstrated rigor matters more than surface familiarity.',
+    ],
+  },
+  Healthcare: {
+    summary: 'The work combines human care, process discipline, and high-stakes judgment around real people.',
+    tasks: [
+      'Operate carefully in situations where quality and safety matter.',
+      'Communicate clearly with patients, teams, or care systems.',
+      'Balance empathy with protocol and time pressure.',
+    ],
+    workContext: ['High trust environment', 'Protocol-driven execution', 'People-centered decisions'],
+    toolThemes: ['Clinical systems', 'Care documentation', 'Operational workflows'],
+    barrierLevel: 'high',
+    barrierSignals: [
+      'Many paths require regulated credentials, supervised hours, or formal training.',
+      'Cold switches are usually slower without a staged bridge role.',
+      'The barrier is often structural, not only skill-based.',
+    ],
+  },
+  Legal: {
+    summary: 'Expect high-detail reasoning, formal language, and consequences for imprecision.',
+    tasks: [
+      'Interpret rules, contracts, or cases with precision.',
+      'Build defensible recommendations from incomplete facts.',
+      'Communicate clearly where nuance changes the decision.',
+    ],
+    workContext: ['High precision', 'Formal review', 'Consequence-heavy decisions'],
+    toolThemes: ['Document systems', 'Research databases', 'Case tracking'],
+    barrierLevel: 'high',
+    barrierSignals: [
+      'Formal credentials or regulated pathways usually define access.',
+      'The ramp is long when you are switching from outside the lane.',
+      'Trust comes from precision and training, not only raw intelligence.',
+    ],
+  },
+  Education: {
+    summary: 'The work blends communication, structure, and repeated adaptation to how other people learn or develop.',
+    tasks: [
+      'Translate ideas into teachable or coachable steps.',
+      'Adjust delivery based on how people respond in real time.',
+      'Balance care, clarity, and structure over repeated cycles.',
+    ],
+    workContext: ['People development', 'High communication load', 'Structured repetition'],
+    toolThemes: ['Planning tools', 'Instruction materials', 'Progress tracking'],
+    barrierLevel: 'specialized',
+    barrierSignals: [
+      'Some paths require licenses or specific credentials before access improves.',
+      'Switches are smoother when you already coach, train, or guide others.',
+      'Patience and consistency matter as much as content knowledge.',
+    ],
+  },
+  General: GENERAL_DISCOVER_ROLE_REALITY_TEMPLATE,
 };
 
 const MAJOR_GROUP_TO_DOMAIN: Record<string, string> = {
@@ -159,6 +416,9 @@ const RECOMMENDED_CACHE_SIZE = 12;
 const MIN_QUERY_LENGTH = 2;
 const SOURCE_URL_BASE = 'https://www.onetonline.org/link/summary/';
 const DISCOVER_ROLE_CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
+const DISCOVER_MARKET_LOCATION = 'US';
+const DISCOVER_OPPORTUNITY_CANDIDATE_LIMIT = 16;
+const DISCOVER_MARKET_CONCURRENCY = 4;
 
 let catalogSeedPromise: Promise<number> | null = null;
 let discoverRoleCatalogCache: { loadedAt: number; items: DiscoverRoleCatalogDoc[] } | null = null;
@@ -1042,12 +1302,562 @@ function computeOverlapTraits(
     .map((entry) => entry.key);
 }
 
-function buildRecommendationReason(overlapTraits: TraitKey[], signals: string[]) {
+function buildRecommendationReason(
+  overlapTraits: TraitKey[],
+  signals: string[],
+  currentJob: DiscoverRoleCurrentJobPayload | null = null,
+  role?: Pick<DiscoverRoleCatalogDoc, 'slug' | 'domain'>
+) {
   const firstTrait = overlapTraits[0] ? TRAIT_LABELS[overlapTraits[0]] : 'balanced';
   const secondTrait = overlapTraits[1] ? TRAIT_LABELS[overlapTraits[1]] : null;
   const traitText = secondTrait ? `${firstTrait} + ${secondTrait}` : firstTrait;
+  if (currentJob?.title) {
+    if (currentJob.matchedRole?.slug && role && currentJob.matchedRole.slug === role.slug) {
+      return `Your current work as ${currentJob.title} already leans on ${traitText} strengths highlighted in your chart.`;
+    }
+    if (currentJob.matchedRole?.domain && role && currentJob.matchedRole.domain === role.domain) {
+      return `Coming from ${currentJob.title}, this path keeps building ${traitText} strengths in a familiar lane.`;
+    }
+    return `From your current work as ${currentJob.title}, this role could build on ${traitText} strengths highlighted in your chart.`;
+  }
   const signal = signals[0] ?? 'Your natal chart profile';
   return `${signal} aligns with ${traitText} demands for this role.`;
+}
+
+function buildRoleReasonAndTags(
+  role: DiscoverRoleCatalogDoc,
+  userProfile: UserTraitProfile,
+  currentJob: DiscoverRoleCurrentJobPayload | null = null,
+) {
+  const overlapTraits = computeOverlapTraits(userProfile.traits, role.traitWeights, 2);
+  return {
+    reason: buildRecommendationReason(overlapTraits, userProfile.signals, currentJob, role),
+    tags: overlapTraits.map((key) => TRAIT_LABELS[key]),
+  };
+}
+
+function dedupeStringsPreserveCase(values: string[], limit: number) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    const normalized = normalizeText(trimmed);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    output.push(trimmed);
+    if (output.length >= limit) break;
+  }
+  return output;
+}
+
+function pickRealityTemplate(role: DiscoverRoleCatalogDoc): DiscoverRoleRealityTemplate {
+  return DOMAIN_REALITY_TEMPLATES[role.domain] ?? GENERAL_DISCOVER_ROLE_REALITY_TEMPLATE;
+}
+
+function buildTitleSpecificTasks(role: DiscoverRoleCatalogDoc) {
+  const tasks: string[] = [];
+  const title = role.title;
+
+  if (/\b(manager|director|head|lead)\b/i.test(title)) {
+    tasks.push('Set direction, sequence work, and keep multiple stakeholders aligned.');
+  }
+  if (/\b(product)\b/i.test(title)) {
+    tasks.push('Decide what matters now versus later when resources are limited.');
+  }
+  if (/\b(engineer|developer|architect|devops|sre|software)\b/i.test(title)) {
+    tasks.push('Ship working systems that hold up under real technical constraints.');
+  }
+  if (/\b(analyst|research|scientist)\b/i.test(title)) {
+    tasks.push('Interrogate signals before turning them into a recommendation.');
+  }
+  if (/\b(designer|ux|brand|creative)\b/i.test(title)) {
+    tasks.push('Translate abstract feedback into concrete iterations people can feel.');
+  }
+  if (/\b(recruit|talent|customer success|sales|marketing|growth)\b/i.test(title)) {
+    tasks.push('Keep external conversations moving while protecting trust and momentum.');
+  }
+
+  return tasks;
+}
+
+function buildRealityToolThemes(role: DiscoverRoleCatalogDoc, market: OccupationInsightResponse | null) {
+  const marketTools = (market?.skills ?? [])
+    .filter((item) => item.category === 'tool' || item.category === 'technology')
+    .map((item) => item.name);
+  const template = pickRealityTemplate(role);
+  const titleTools: string[] = [];
+
+  if (/\b(product)\b/i.test(role.title)) {
+    titleTools.push('Prioritization frameworks');
+  }
+  if (/\b(engineer|developer|architect|devops|software)\b/i.test(role.title)) {
+    titleTools.push('Code review workflows');
+  }
+  if (/\b(analyst|scientist|research)\b/i.test(role.title)) {
+    titleTools.push('Analysis workflows');
+  }
+  if (/\b(designer|ux|creative|brand)\b/i.test(role.title)) {
+    titleTools.push('Design critique loops');
+  }
+
+  return dedupeStringsPreserveCase(
+    [...marketTools, ...titleTools, ...template.toolThemes],
+    4,
+  );
+}
+
+const DISCOVER_ENTRY_BARRIER_RANK: Record<DiscoverRoleDetail['entryBarrier']['level'], number> = {
+  accessible: 0,
+  moderate: 1,
+  specialized: 2,
+  high: 3,
+};
+
+function resolveEntryBarrierLevel(role: DiscoverRoleCatalogDoc): DiscoverRoleDetail['entryBarrier']['level'] {
+  const title = role.title;
+  if (/\b(physician|surgeon|dentist|pharmacist|lawyer|attorney|judge|psychologist)\b/i.test(title)) {
+    return 'high';
+  }
+  if (/\b(nurse|teacher|therapist|scientist|engineer|developer|architect|research|analyst)\b/i.test(title)) {
+    return 'specialized';
+  }
+  if (/\b(assistant|associate|representative|coordinator|support|administrator|technician)\b/i.test(title)) {
+    return 'accessible';
+  }
+  return pickRealityTemplate(role).barrierLevel;
+}
+
+function resolveEntryBarrierLabel(level: DiscoverRoleDetail['entryBarrier']['level']) {
+  const labels: Record<DiscoverRoleDetail['entryBarrier']['level'], string> = {
+    accessible: 'Lower Entry Barrier',
+    moderate: 'Moderate Entry Barrier',
+    specialized: 'Specialized Ramp',
+    high: 'High Entry Barrier',
+  };
+  return labels[level];
+}
+
+type DiscoverRoleDecisionSupportCandidate = {
+  role: DiscoverRoleCatalogDoc;
+  score: number;
+  barrierLevel: DiscoverRoleDetail['entryBarrier']['level'];
+  barrierLabel: string;
+  barrierRank: number;
+  sameSelectedDomain: boolean;
+  sameCurrentRole: boolean;
+  sameCurrentDomain: boolean;
+  sharedTagCount: number;
+  practicalScore: number;
+  stretchScore: number;
+};
+
+function countSharedStrings(left: string[], right: string[]) {
+  const rightSet = new Set(right.map((item) => normalizeText(item)));
+  return left.reduce((count, item) => {
+    const key = normalizeText(item);
+    if (!key || !rightSet.has(key)) return count;
+    return count + 1;
+  }, 0);
+}
+
+function toDecisionRole(
+  role: DiscoverRoleCatalogDoc,
+  score: number,
+  barrierLevel: DiscoverRoleDetail['entryBarrier']['level'],
+): DiscoverRoleDecisionRole {
+  return {
+    slug: role.slug,
+    title: role.title,
+    domain: role.domain,
+    fitScore: score,
+    fitLabel: `${score}% fit`,
+    barrier: {
+      level: barrierLevel,
+      label: resolveEntryBarrierLabel(barrierLevel),
+    },
+  };
+}
+
+function buildDecisionSupportCandidate(input: {
+  selectedRole: DiscoverRoleCatalogDoc;
+  candidateRole: DiscoverRoleCatalogDoc;
+  candidateScore: number;
+  currentJob: DiscoverRoleCurrentJobPayload | null;
+}): DiscoverRoleDecisionSupportCandidate {
+  const { selectedRole, candidateRole, candidateScore, currentJob } = input;
+  const barrierLevel = resolveEntryBarrierLevel(candidateRole);
+  const barrierLabel = resolveEntryBarrierLabel(barrierLevel);
+  const barrierRank = DISCOVER_ENTRY_BARRIER_RANK[barrierLevel];
+  const sameSelectedDomain = selectedRole.domain === candidateRole.domain;
+  const sameCurrentRole = currentJob?.matchedRole?.slug === candidateRole.slug;
+  const sameCurrentDomain = currentJob?.matchedRole?.domain === candidateRole.domain;
+  const sharedTagCount = countSharedStrings(selectedRole.tags, candidateRole.tags);
+
+  return {
+    role: candidateRole,
+    score: candidateScore,
+    barrierLevel,
+    barrierLabel,
+    barrierRank,
+    sameSelectedDomain,
+    sameCurrentRole,
+    sameCurrentDomain,
+    sharedTagCount,
+    practicalScore:
+      candidateScore -
+      barrierRank * 11 +
+      (sameCurrentRole ? 18 : 0) +
+      (sameCurrentDomain ? 10 : 0) +
+      (sameSelectedDomain ? 7 : 0) +
+      sharedTagCount * 3,
+    stretchScore:
+      candidateScore +
+      (sameSelectedDomain ? 6 : 0) +
+      sharedTagCount * 2 +
+      (barrierRank >= DISCOVER_ENTRY_BARRIER_RANK[resolveEntryBarrierLevel(selectedRole)] ? 4 : 0),
+  };
+}
+
+function buildDecisionSupportSummary(input: {
+  lane: DiscoverRoleTransitionPath['lane'];
+  selectedRole: DiscoverRoleCatalogDoc;
+  candidate: DiscoverRoleDecisionSupportCandidate;
+  currentJob: DiscoverRoleCurrentJobPayload | null;
+}) {
+  const { lane, selectedRole, candidate, currentJob } = input;
+
+  if (lane === 'best_match') {
+    if (currentJob?.title && (candidate.sameCurrentRole || candidate.sameCurrentDomain)) {
+      return `Closest to ${currentJob.title} while still keeping strong alignment with your chart profile.`;
+    }
+    if (candidate.sameSelectedDomain) {
+      return `Stays close to the ${selectedRole.domain.toLowerCase()} lane, but reads as easier to picture in practice.`;
+    }
+    return `The cleanest adjacent move from your current fit profile.`;
+  }
+
+  if (lane === 'easier_entry') {
+    return `Lower switching friction than ${selectedRole.title} while keeping enough fit to stay credible.`;
+  }
+
+  if (candidate.barrierRank > DISCOVER_ENTRY_BARRIER_RANK[resolveEntryBarrierLevel(selectedRole)]) {
+    return `A longer stretch than ${selectedRole.title}, but the upside may justify a slower ramp.`;
+  }
+  return `Similar fit with a stronger long-range ceiling if you can tolerate a more deliberate ramp.`;
+}
+
+function buildBestAlternativeReasons(input: {
+  selectedRole: DiscoverRoleCatalogDoc;
+  selectedScore: number;
+  candidate: DiscoverRoleDecisionSupportCandidate;
+  currentJob: DiscoverRoleCurrentJobPayload | null;
+}) {
+  const { selectedRole, selectedScore, candidate, currentJob } = input;
+  const selectedBarrierRank = DISCOVER_ENTRY_BARRIER_RANK[resolveEntryBarrierLevel(selectedRole)];
+
+  return dedupeStringsPreserveCase(
+    [
+      candidate.sameCurrentRole
+        ? 'This is already your current lane, so you are compounding existing credibility instead of explaining a cold switch.'
+        : '',
+      candidate.sameCurrentDomain && currentJob?.title
+        ? `It stays closer to ${currentJob.title}, which should make the move easier to explain to recruiters and hiring managers.`
+        : '',
+      candidate.barrierRank < selectedBarrierRank
+        ? `Entry friction is lower than ${selectedRole.title}, which makes early traction more realistic.`
+        : '',
+      candidate.score >= selectedScore - 8
+        ? `Fit stays close to ${selectedRole.title}, so you are not giving up much alignment for practicality.`
+        : '',
+      candidate.sameSelectedDomain
+        ? `It still keeps you near the same ${selectedRole.domain.toLowerCase()} lane.`
+        : '',
+    ],
+    3,
+  );
+}
+
+function buildBestAlternativeHeadline(input: {
+  candidate: DiscoverRoleDecisionSupportCandidate;
+  currentJob: DiscoverRoleCurrentJobPayload | null;
+}) {
+  const { candidate, currentJob } = input;
+  if (candidate.sameCurrentRole) {
+    return 'Most realistic continuation from your current role';
+  }
+  if (candidate.sameCurrentDomain && currentJob?.title) {
+    return 'Cleaner move from your current lane';
+  }
+  if (candidate.barrierRank <= 1) {
+    return 'Lower-friction alternative';
+  }
+  return 'More practical next bet';
+}
+
+function buildBestAlternativeSummary(input: {
+  selectedRole: DiscoverRoleCatalogDoc;
+  candidate: DiscoverRoleDecisionSupportCandidate;
+  currentJob: DiscoverRoleCurrentJobPayload | null;
+}) {
+  const { selectedRole, candidate, currentJob } = input;
+  if (candidate.sameCurrentRole) {
+    return `${candidate.role.title} looks easier to convert from ${currentJob?.title ?? 'your current work'} without losing the strengths already showing up in your chart.`;
+  }
+  if (candidate.sameCurrentDomain && currentJob?.title) {
+    return `${candidate.role.title} is the cleaner bet if you want to stay closer to ${currentJob.title} while still moving forward.`;
+  }
+  if (candidate.barrierRank < DISCOVER_ENTRY_BARRIER_RANK[resolveEntryBarrierLevel(selectedRole)]) {
+    return `${candidate.role.title} may be the stronger immediate bet if you want similar upside with a lighter ramp.`;
+  }
+  return `${candidate.role.title} is the best alternate path when you want something that still fits, but reads as more actionable right now.`;
+}
+
+export function buildDiscoverRoleDecisionSupport(input: {
+  selectedRole: DiscoverRoleCatalogDoc;
+  selectedScore: number;
+  rankedRoles: Array<{ role: DiscoverRoleCatalogDoc; score: number }>;
+  currentJob: DiscoverRoleCurrentJobPayload | null;
+}): Pick<DiscoverRoleDetail, 'transitionMap' | 'bestAlternative'> {
+  const { selectedRole, selectedScore, rankedRoles, currentJob } = input;
+  const selectedBarrierLevel = resolveEntryBarrierLevel(selectedRole);
+  const selectedBarrierRank = DISCOVER_ENTRY_BARRIER_RANK[selectedBarrierLevel];
+  const selectedPracticalScore =
+    selectedScore -
+    selectedBarrierRank * 11 +
+    (currentJob?.matchedRole?.slug === selectedRole.slug ? 18 : 0) +
+    (currentJob?.matchedRole?.domain === selectedRole.domain ? 10 : 0);
+
+  const candidates = rankedRoles
+    .filter((entry) => entry.role.slug !== selectedRole.slug)
+    .map((entry) =>
+      buildDecisionSupportCandidate({
+        selectedRole,
+        candidateRole: entry.role,
+        candidateScore: entry.score,
+        currentJob,
+      }),
+    );
+
+  const practicalSorted = [...candidates].sort(
+    (a, b) =>
+      b.practicalScore - a.practicalScore ||
+      b.score - a.score ||
+      a.role.title.localeCompare(b.role.title),
+  );
+
+  const bestAlternativeCandidate = practicalSorted.find((candidate) => {
+    const practicalDelta = candidate.practicalScore - selectedPracticalScore;
+    return (
+      practicalDelta >= 4 ||
+      (selectedBarrierRank >= 2 && candidate.barrierRank < selectedBarrierRank) ||
+      (Boolean(currentJob?.matchedRole) && (candidate.sameCurrentRole || candidate.sameCurrentDomain))
+    );
+  }) ?? null;
+
+  const usedSlugs = new Set<string>();
+  if (bestAlternativeCandidate) {
+    usedSlugs.add(bestAlternativeCandidate.role.slug);
+  }
+
+  const pickCandidate = (
+    items: DiscoverRoleDecisionSupportCandidate[],
+    predicate: (candidate: DiscoverRoleDecisionSupportCandidate) => boolean,
+  ) => items.find((candidate) => !usedSlugs.has(candidate.role.slug) && predicate(candidate)) ?? null;
+
+  const transitionMap: DiscoverRoleTransitionPath[] = [];
+
+  const bestMatchCandidate = pickCandidate(
+    practicalSorted,
+    () => true,
+  );
+  if (bestMatchCandidate) {
+    usedSlugs.add(bestMatchCandidate.role.slug);
+    transitionMap.push({
+      lane: 'best_match',
+      label: currentJob?.title ? 'Closest Next Move' : 'Best Match',
+      summary: buildDecisionSupportSummary({
+        lane: 'best_match',
+        selectedRole,
+        candidate: bestMatchCandidate,
+        currentJob,
+      }),
+      role: toDecisionRole(
+        bestMatchCandidate.role,
+        bestMatchCandidate.score,
+        bestMatchCandidate.barrierLevel,
+      ),
+    });
+  }
+
+  const easierEntryCandidate = pickCandidate(
+    practicalSorted,
+    (candidate) =>
+      (candidate.barrierRank < selectedBarrierRank || candidate.barrierRank <= 1) &&
+      (candidate.score >= Math.max(55, selectedScore - 20) || candidate.sameCurrentDomain || candidate.sameCurrentRole),
+  );
+  if (easierEntryCandidate) {
+    usedSlugs.add(easierEntryCandidate.role.slug);
+    transitionMap.push({
+      lane: 'easier_entry',
+      label: 'Easier Entry',
+      summary: buildDecisionSupportSummary({
+        lane: 'easier_entry',
+        selectedRole,
+        candidate: easierEntryCandidate,
+        currentJob,
+      }),
+      role: toDecisionRole(
+        easierEntryCandidate.role,
+        easierEntryCandidate.score,
+        easierEntryCandidate.barrierLevel,
+      ),
+    });
+  }
+
+  const higherCeilingCandidate = pickCandidate(
+    [...candidates].sort(
+      (a, b) =>
+        b.stretchScore - a.stretchScore ||
+        b.score - a.score ||
+        a.role.title.localeCompare(b.role.title),
+    ),
+    (candidate) =>
+      (candidate.barrierRank >= selectedBarrierRank || candidate.score >= selectedScore - 6) &&
+      candidate.score >= Math.max(60, selectedScore - 12),
+  );
+  if (higherCeilingCandidate) {
+    transitionMap.push({
+      lane: 'higher_ceiling',
+      label: 'Higher Ceiling',
+      summary: buildDecisionSupportSummary({
+        lane: 'higher_ceiling',
+        selectedRole,
+        candidate: higherCeilingCandidate,
+        currentJob,
+      }),
+      role: toDecisionRole(
+        higherCeilingCandidate.role,
+        higherCeilingCandidate.score,
+        higherCeilingCandidate.barrierLevel,
+      ),
+    });
+  }
+
+  return {
+    transitionMap: transitionMap.slice(0, 3),
+    bestAlternative: bestAlternativeCandidate
+      ? {
+          headline: buildBestAlternativeHeadline({
+            candidate: bestAlternativeCandidate,
+            currentJob,
+          }),
+          summary: buildBestAlternativeSummary({
+            selectedRole,
+            candidate: bestAlternativeCandidate,
+            currentJob,
+          }),
+          reasons: buildBestAlternativeReasons({
+            selectedRole,
+            selectedScore,
+            candidate: bestAlternativeCandidate,
+            currentJob,
+          }),
+          role: toDecisionRole(
+            bestAlternativeCandidate.role,
+            bestAlternativeCandidate.score,
+            bestAlternativeCandidate.barrierLevel,
+          ),
+        }
+      : null,
+  };
+}
+
+function buildDiscoverRoleDetail(input: {
+  role: DiscoverRoleCatalogDoc;
+  userProfile: UserTraitProfile;
+  currentJob: DiscoverRoleCurrentJobPayload | null;
+  market: OccupationInsightResponse | null;
+  rankedRoles: Array<{ role: DiscoverRoleCatalogDoc; score: number }>;
+}): DiscoverRoleDetail {
+  const { role, userProfile, currentJob, market, rankedRoles } = input;
+  const overlapTraits = computeOverlapTraits(userProfile.traits, role.traitWeights, 3);
+  const topTraits = overlapTraits.map((trait) => TRAIT_LABELS[trait]);
+  const selectedScore = computeRoleScore(userProfile.traits, role.traitWeights);
+  const whySummary = buildRecommendationReason(overlapTraits, userProfile.signals, currentJob, role);
+  const whyBullets = dedupeStringsPreserveCase(
+    [
+      ...overlapTraits.map(
+        (trait) =>
+          `${TRAIT_LABELS[trait]} helps here because the work leans on ${TRAIT_EXPLANATIONS[trait]}.`,
+      ),
+      currentJob?.matchedRole?.domain === role.domain
+        ? `Your current role already sits near the ${role.domain.toLowerCase()} lane, so the transition is easier to picture.`
+        : currentJob?.title
+          ? `This can be read as a next-step option from ${currentJob.title}, not only a cold-switch fantasy role.`
+          : userProfile.signals[0] ?? '',
+    ],
+    3,
+  );
+
+  const realityTemplate = pickRealityTemplate(role);
+  const tasks = dedupeStringsPreserveCase(
+    [...buildTitleSpecificTasks(role), ...realityTemplate.tasks],
+    3,
+  );
+  const workContext = dedupeStringsPreserveCase(realityTemplate.workContext, 3);
+  const toolThemes = buildRealityToolThemes(role, market);
+
+  const barrierLevel = resolveEntryBarrierLevel(role);
+  const barrierSignals = dedupeStringsPreserveCase(
+    [
+      currentJob?.matchedRole?.slug === role.slug
+        ? 'This already overlaps strongly with your current lane, so the switching friction is lower than a cold move.'
+        : currentJob?.matchedRole?.domain === role.domain
+          ? 'Your current role is already adjacent to this domain, which lowers the ramp compared with a full lane change.'
+          : '',
+      ...realityTemplate.barrierSignals,
+    ],
+    3,
+  );
+  const barrierSummary =
+    currentJob?.matchedRole?.slug === role.slug
+      ? `This is already close to your current work, so the main challenge is depth, not entry.`
+      : currentJob?.matchedRole?.domain === role.domain
+        ? `Compared with a cold switch, this path should feel more reachable because you already operate near the same domain.`
+        : {
+            accessible: 'This path is usually easier to test with transferable proof and adjacent experience.',
+            moderate: 'This path often rewards adjacent experience, but it does not usually require a long formal ramp.',
+            specialized: 'This path usually needs focused proof, domain reps, or a stronger skills ramp before it feels natural.',
+            high: 'This path often carries formal training, regulated access, or a long trust-building ramp.',
+          }[barrierLevel];
+  const decisionSupport = buildDiscoverRoleDecisionSupport({
+    selectedRole: role,
+    selectedScore,
+    rankedRoles,
+    currentJob,
+  });
+
+  return {
+    whyFit: {
+      summary: whySummary,
+      bullets: whyBullets,
+      topTraits,
+    },
+    realityCheck: {
+      summary: realityTemplate.summary,
+      tasks,
+      workContext,
+      toolThemes,
+    },
+    entryBarrier: {
+      level: barrierLevel,
+      label: resolveEntryBarrierLabel(barrierLevel),
+      summary: barrierSummary,
+      signals: barrierSignals,
+    },
+    transitionMap: decisionSupport.transitionMap,
+    bestAlternative: decisionSupport.bestAlternative,
+  };
 }
 
 function buildRankedRoles(roles: DiscoverRoleCatalogDoc[], userProfile: UserTraitProfile): RankedRole[] {
@@ -1099,11 +1909,65 @@ function buildCacheItems(ranked: RankedRole[]): DiscoverRoleRecommendationItemDo
   }));
 }
 
+export function computeDiscoverRoleMarketOpportunityScore(market: OccupationInsightResponse | null) {
+  if (!market) return 0;
+
+  const marketScore = {
+    'strong market': 40,
+    'steady market': 28,
+    'niche market': 18,
+    'limited data': 8,
+  }[market.labels.marketScore];
+  const demandScore = {
+    high: 25,
+    moderate: 16,
+    low: 6,
+    unknown: 8,
+  }[market.outlook.demandLabel];
+  const median = market.salary?.median ?? null;
+  const salaryScore =
+    typeof median === 'number'
+      ? median >= 150_000
+        ? 20
+        : median >= 110_000
+          ? 16
+          : median >= 80_000
+            ? 12
+            : median >= 55_000
+              ? 8
+              : 5
+      : 4;
+  const openings = market.outlook.projectedOpenings ?? null;
+  const openingsScore =
+    typeof openings === 'number'
+      ? openings >= 100_000
+        ? 15
+        : openings >= 25_000
+          ? 10
+          : openings >= 5_000
+            ? 6
+            : 3
+      : 4;
+
+  return Math.max(0, Math.min(100, marketScore + demandScore + salaryScore + openingsScore));
+}
+
+export function computeDiscoverRoleOpportunityRankScore(input: {
+  fitScore: number;
+  market: OccupationInsightResponse | null;
+}) {
+  const marketScore = computeDiscoverRoleMarketOpportunityScore(input.market);
+  if (marketScore <= 0) return input.fitScore;
+  return Math.round(marketScore * 0.65 + input.fitScore * 0.35);
+}
+
 function buildRoleView(
   role: DiscoverRoleCatalogDoc,
   score: number,
   reason: string,
-  tags: string[]
+  tags: string[],
+  market: OccupationInsightResponse | null = null,
+  detail?: DiscoverRoleDetail,
 ) {
   return {
     slug: role.slug,
@@ -1118,7 +1982,72 @@ function buildRoleView(
       code: role.onetCode,
       url: role.sourceUrl,
     },
+    market,
+    detail: detail ?? null,
+    opportunityScore: computeDiscoverRoleOpportunityRankScore({
+      fitScore: score,
+      market,
+    }),
   };
+}
+
+async function mapWithConcurrency<TInput, TOutput>(
+  items: TInput[],
+  concurrency: number,
+  mapper: (item: TInput) => Promise<TOutput>,
+): Promise<TOutput[]> {
+  const results: TOutput[] = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        const item = items[currentIndex];
+        if (item === undefined) continue;
+        results[currentIndex] = await mapper(item);
+      }
+    }),
+  );
+
+  return results;
+}
+
+async function loadMarketForRoles(input: {
+  roles: DiscoverRoleCatalogDoc[];
+  log?: LoggerLike;
+}) {
+  const uniqueRoles = [...new Map(input.roles.map((role) => [role.slug, role])).values()];
+  const entries = await mapWithConcurrency(
+    uniqueRoles,
+    DISCOVER_MARKET_CONCURRENCY,
+    async (role): Promise<[string, OccupationInsightResponse | null]> => {
+      try {
+        const market = await getOccupationInsight({
+          keyword: role.onetCode ?? role.title,
+          location: DISCOVER_MARKET_LOCATION,
+        });
+        return [role.slug, market];
+      } catch (error) {
+        if (error instanceof MarketProviderError) {
+          input.log?.warn?.(
+            { code: error.code, roleSlug: role.slug, roleTitle: role.title },
+            'Discover role market enrichment unavailable',
+          );
+        } else {
+          input.log?.warn?.(
+            { error, roleSlug: role.slug, roleTitle: role.title },
+            'Discover role market enrichment failed',
+          );
+        }
+        return [role.slug, null];
+      }
+    },
+  );
+
+  return new Map(entries);
 }
 
 function queryMatchRank(role: DiscoverRoleCatalogDoc, normalizedQuery: string, tokens: string[]) {
@@ -1148,6 +2077,37 @@ function queryMatchRank(role: DiscoverRoleCatalogDoc, normalizedQuery: string, t
   return rank;
 }
 
+export function findBestDiscoverRoleCatalogMatch(
+  roles: DiscoverRoleCatalogDoc[],
+  query: string,
+): DiscoverRoleCatalogDoc | null {
+  const normalizedQuery = normalizeText(query);
+  if (normalizedQuery.length < MIN_QUERY_LENGTH) return null;
+
+  const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  const match = roles
+    .map((role) => ({
+      role,
+      rank: queryMatchRank(role, normalizedQuery, tokens),
+    }))
+    .filter((entry) => entry.rank > 0)
+    .sort((a, b) => b.rank - a.rank || a.role.title.localeCompare(b.role.title))[0];
+
+  return match?.role ?? null;
+}
+
+export async function resolveDiscoverRoleCatalogMatch(
+  query: string,
+  options?: { forceRefresh?: boolean; log?: LoggerLike },
+) {
+  await ensureDiscoverRoleCatalogSeeded(options?.log);
+  const collections = await getCollections();
+  const catalog = await loadActiveDiscoverRoleCatalog(collections, {
+    forceRefresh: options?.forceRefresh,
+  });
+  return findBestDiscoverRoleCatalogMatch(catalog, query);
+}
+
 type DiscoverRolesInput = {
   userId: ObjectId;
   profileHash: string;
@@ -1158,6 +2118,8 @@ type DiscoverRolesInput = {
   refresh: boolean;
   deferSearchScores: boolean;
   scoreSlug: string;
+  rankingMode: DiscoverRoleRankingMode;
+  currentJob?: DiscoverRoleCurrentJobPayload | null;
   log?: LoggerLike;
 };
 
@@ -1165,6 +2127,10 @@ export type DiscoverRolesResponse = {
   algorithmVersion: string;
   cached: boolean;
   generatedAt: string;
+  rankingMode: DiscoverRoleRankingMode;
+  context: {
+    currentJob: DiscoverRoleCurrentJobPayload | null;
+  };
   recommended: Array<{
     slug: string;
     title: string;
@@ -1178,6 +2144,9 @@ export type DiscoverRolesResponse = {
       code: string | null;
       url: string | null;
     };
+    market: OccupationInsightResponse | null;
+    detail: DiscoverRoleDetail | null;
+    opportunityScore: number;
   }>;
   search: Array<{
     slug: string;
@@ -1187,6 +2156,9 @@ export type DiscoverRolesResponse = {
     score?: number;
     scoreLabel?: string;
     scoreStatus: 'ready' | 'deferred';
+    market: OccupationInsightResponse | null;
+    detail: DiscoverRoleDetail | null;
+    opportunityScore: number | null;
   }>;
   query: string;
   meta: {
@@ -1257,6 +2229,7 @@ export async function getDiscoverRoles(input: DiscoverRolesInput): Promise<Disco
   }
 
   const roleBySlug = new Map(catalog.map((role) => [role.slug, role]));
+  const currentJob = input.currentJob ?? null;
   const scoreBySlug = new Map<string, number>();
   const scoreForRole = (role: DiscoverRoleCatalogDoc) => {
     const cachedScore = scoreBySlug.get(role.slug);
@@ -1303,28 +2276,120 @@ export async function getDiscoverRoles(input: DiscoverRolesInput): Promise<Disco
   };
 
   const recommendedCount = Math.max(3, Math.min(8, input.limit));
-  const recommended: DiscoverRolesResponse['recommended'] = [];
+  const buildFitRecommended = () => {
+    const items: DiscoverRolesResponse['recommended'] = [];
 
-  for (const item of cacheItems) {
-    const role = roleBySlug.get(item.roleSlug);
-    if (!role) continue;
-    const fallback =
-      item.reason && item.tags.length > 0
-        ? null
-        : ensureFallbackBySlug().get(role.slug);
-    const score = scoreForRole(role);
-    const reason = item.reason || fallback?.reason || 'This role aligns well with your chart profile.';
-    const tags = item.tags.length > 0 ? item.tags : fallback?.tags ?? role.tags;
-    recommended.push(buildRoleView(role, score, reason, tags));
-    if (recommended.length >= recommendedCount) break;
-  }
-
-  if (recommended.length < recommendedCount) {
-    for (const entry of ensureRanked()) {
-      if (recommended.some((item) => item.slug === entry.role.slug)) continue;
-      recommended.push(buildRoleView(entry.role, entry.score, entry.reason, entry.tags));
-      if (recommended.length >= recommendedCount) break;
+    for (const item of cacheItems) {
+      const role = roleBySlug.get(item.roleSlug);
+      if (!role) continue;
+      const fallback =
+        item.reason && item.tags.length > 0
+          ? null
+          : ensureFallbackBySlug().get(role.slug);
+      const score = scoreForRole(role);
+      const personalized = buildRoleReasonAndTags(role, userProfile, currentJob);
+      const reason = currentJob?.title
+        ? personalized.reason
+        : item.reason || fallback?.reason || personalized.reason || 'This role aligns well with your chart profile.';
+      const tags = currentJob?.title
+        ? personalized.tags
+        : item.tags.length > 0
+          ? item.tags
+          : fallback?.tags ?? personalized.tags ?? role.tags;
+      items.push(buildRoleView(role, score, reason, tags));
+      if (items.length >= recommendedCount) break;
     }
+
+    if (items.length < recommendedCount) {
+      for (const entry of ensureRanked()) {
+        if (items.some((item) => item.slug === entry.role.slug)) continue;
+        const personalized = buildRoleReasonAndTags(entry.role, userProfile, currentJob);
+        items.push(
+          buildRoleView(
+            entry.role,
+            entry.score,
+            currentJob?.title ? personalized.reason : entry.reason,
+            currentJob?.title ? personalized.tags : entry.tags,
+          ),
+        );
+        if (items.length >= recommendedCount) break;
+      }
+    }
+
+    return items;
+  };
+
+  let recommended: DiscoverRolesResponse['recommended'];
+  const decisionSupportRankedRoles = ensureRanked().slice(
+    0,
+    Math.max(DISCOVER_OPPORTUNITY_CANDIDATE_LIMIT, recommendedCount + 8),
+  );
+
+  if (input.rankingMode === 'opportunity') {
+    const candidateEntries = ensureRanked().slice(
+      0,
+      Math.max(DISCOVER_OPPORTUNITY_CANDIDATE_LIMIT, recommendedCount),
+    );
+    const marketBySlug = await loadMarketForRoles({
+      roles: candidateEntries.map((entry) => entry.role),
+      log: input.log,
+    });
+    recommended = candidateEntries
+      .map((entry) => {
+        const personalized = buildRoleReasonAndTags(entry.role, userProfile, currentJob);
+        const market = marketBySlug.get(entry.role.slug) ?? null;
+        return buildRoleView(
+          entry.role,
+          entry.score,
+          currentJob?.title ? personalized.reason : entry.reason,
+          currentJob?.title ? personalized.tags : entry.tags,
+          market,
+          buildDiscoverRoleDetail({
+            role: entry.role,
+            userProfile,
+            currentJob,
+            market,
+            rankedRoles: decisionSupportRankedRoles,
+          }),
+        );
+      })
+      .sort(
+        (a, b) =>
+          b.opportunityScore - a.opportunityScore ||
+          b.score - a.score ||
+          a.title.localeCompare(b.title),
+      )
+      .slice(0, recommendedCount);
+  } else {
+    const fitRecommended = buildFitRecommended();
+    const rolesToEnrich = fitRecommended
+      .map((item) => roleBySlug.get(item.slug))
+      .filter((role): role is DiscoverRoleCatalogDoc => Boolean(role));
+    const marketBySlug = await loadMarketForRoles({
+      roles: rolesToEnrich,
+      log: input.log,
+    });
+    recommended = fitRecommended.map((item) => {
+      const market = marketBySlug.get(item.slug) ?? null;
+      const role = roleBySlug.get(item.slug);
+      return {
+        ...item,
+        market,
+        detail: role
+          ? buildDiscoverRoleDetail({
+              role,
+              userProfile,
+              currentJob,
+              market,
+              rankedRoles: decisionSupportRankedRoles,
+            })
+          : item.detail,
+        opportunityScore: computeDiscoverRoleOpportunityRankScore({
+          fitScore: item.score,
+          market,
+        }),
+      };
+    });
   }
 
   const normalizedQuery = normalizeText(input.query);
@@ -1354,16 +2419,65 @@ export async function getDiscoverRoles(input: DiscoverRolesInput): Promise<Disco
         tags: entry.role.tags.slice(0, 2),
         ...(score !== null ? { score, scoreLabel: `${score}%` } : {}),
         scoreStatus: score !== null ? 'ready' : 'deferred',
+        market: null,
+        detail: buildDiscoverRoleDetail({
+          role: entry.role,
+          userProfile,
+          currentJob,
+          market: null,
+          rankedRoles: decisionSupportRankedRoles,
+        }),
+        opportunityScore: score,
       });
     }
   }
+
+  const searchRolesToEnrich = search
+    .filter((item) => !input.deferSearchScores || item.slug === input.scoreSlug)
+    .map((item) => roleBySlug.get(item.slug))
+    .filter((role): role is DiscoverRoleCatalogDoc => Boolean(role));
+  const searchMarketBySlug =
+    searchRolesToEnrich.length > 0
+      ? await loadMarketForRoles({
+          roles: searchRolesToEnrich,
+          log: input.log,
+        })
+      : new Map<string, OccupationInsightResponse | null>();
+  const enrichedSearch = search.map((item) => {
+    const market = searchMarketBySlug.get(item.slug) ?? null;
+    const role = roleBySlug.get(item.slug);
+    return {
+      ...item,
+      market,
+      detail: role
+        ? buildDiscoverRoleDetail({
+            role,
+            userProfile,
+            currentJob,
+            market,
+            rankedRoles: decisionSupportRankedRoles,
+          })
+        : item.detail,
+      opportunityScore:
+        item.score == null
+          ? null
+          : computeDiscoverRoleOpportunityRankScore({
+              fitScore: item.score,
+              market,
+            }),
+    };
+  });
 
   return {
     algorithmVersion: DISCOVER_ROLES_ALGORITHM_VERSION,
     cached: fromCache,
     generatedAt: generatedAt.toISOString(),
+    rankingMode: input.rankingMode,
+    context: {
+      currentJob,
+    },
     recommended,
-    search,
+    search: enrichedSearch,
     query: normalizedQuery,
     meta: {
       catalogSize: catalog.length,

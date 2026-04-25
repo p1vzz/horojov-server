@@ -3,12 +3,29 @@ import test from 'node:test';
 import { buildCachedJobAnalyzeResponse } from './jobs/analyzeRouteHandler.js';
 
 test('cached job analyze response keeps fresh-response preview fields', () => {
+  const limit = {
+    plan: 'premium' as const,
+    depth: 'full' as const,
+    period: 'daily_utc' as const,
+    limit: 10,
+    used: 2,
+    remaining: 8,
+    nextAvailableAt: null,
+    canProceed: true,
+  };
   const response = buildCachedJobAnalyzeResponse({
     analysisId: 'analysis-1',
     providerUsed: 'http_fetch',
     rawCacheHit: true,
     parsedCacheHit: true,
     plan: 'premium',
+    limit,
+    limits: {
+      plan: 'premium',
+      lite: { ...limit, depth: 'lite', limit: 30, used: 4, remaining: 26 },
+      full: limit,
+    },
+    market: null,
     versions: {
       parserVersion: 'parser-v1',
       rubricVersion: 'rubric-v1',
@@ -34,6 +51,7 @@ test('cached job analyze response keeps fresh-response preview fields', () => {
       title: 'Product Manager',
       company: 'Acme',
       location: 'Remote',
+      salaryText: '$120,000-$150,000 per year',
       description: 'Build product workflows.',
       employmentType: 'Full-time',
       datePosted: null,
@@ -42,12 +60,16 @@ test('cached job analyze response keeps fresh-response preview fields', () => {
   });
 
   assert.equal(response.cached, true);
+  assert.equal(response.scanDepth, 'full');
+  assert.equal(response.usage.depth, 'full');
+  assert.deepEqual(response.usage.limit, limit);
   assert.deepEqual(response.tags, ['product', 'remote']);
   assert.deepEqual(response.descriptors, ['leadership', 'communication']);
   assert.deepEqual(response.job, {
     title: 'Product Manager',
     company: 'Acme',
     location: 'Remote',
+    salaryText: '$120,000-$150,000 per year',
     employmentType: 'Full-time',
     source: 'linkedin',
   });

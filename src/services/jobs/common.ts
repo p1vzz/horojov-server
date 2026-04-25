@@ -58,6 +58,7 @@ export function parseNormalizedJobPayload(
     title: obj.title,
     company: typeof obj.company === "string" ? obj.company : null,
     location: typeof obj.location === "string" ? obj.location : null,
+    salaryText: typeof obj.salaryText === "string" ? obj.salaryText : null,
     description: obj.description,
     employmentType:
       typeof obj.employmentType === "string" ? obj.employmentType : null,
@@ -80,6 +81,7 @@ export function fallbackJobFromText(input: {
     title: titleRow?.trim() || "Untitled role",
     company: null,
     location: null,
+    salaryText: null,
     description: descriptionRows.join("\n").trim() || input.normalizedText,
     employmentType: null,
     datePosted: null,

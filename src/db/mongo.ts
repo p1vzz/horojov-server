@@ -1,6 +1,8 @@
 import { MongoClient, ObjectId, type Collection, type Db } from 'mongodb';
 import { env } from '../config/env.js';
+import type { OccupationInsightResponse } from '../services/marketData/types.js';
 import type { JobProviderName, SupportedJobSource } from '../services/jobUrl.js';
+import type { DiscoverRoleDetail } from '../services/discoverRoles.js';
 
 export type UserDoc = {
   _id: ObjectId;
@@ -34,6 +36,8 @@ export type BirthProfileDoc = {
   birthTime: string | null;
   unknownTime: boolean;
   city: string;
+  currentJobTitle?: string | null;
+  currentJobUpdatedAt?: Date | null;
   latitude?: number | null;
   longitude?: number | null;
   country?: string | null;
@@ -426,6 +430,35 @@ export type DiscoverRoleRecommendationsDoc = {
   updatedAt: Date;
 };
 
+export type DiscoverRoleShortlistEntryDoc = {
+  _id: ObjectId;
+  userId: ObjectId;
+  slug: string;
+  role: string;
+  domain: string;
+  scoreLabel: string | null;
+  scoreValue: number | null;
+  tags: string[];
+  market: OccupationInsightResponse | null;
+  detail?: DiscoverRoleDetail | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type DiscoverRoleCurrentJobDoc = {
+  _id: ObjectId;
+  userId: ObjectId;
+  title: string;
+  matchedRoleSlug: string | null;
+  matchedRoleTitle: string | null;
+  matchedRoleDomain: string | null;
+  matchedRoleSource: 'onetonline' | 'manual' | null;
+  matchedRoleCode: string | null;
+  matchedRoleUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type JobRawDoc = {
   _id: ObjectId;
   source: SupportedJobSource;
@@ -494,6 +527,29 @@ export type JobAnalysisDoc = {
   updatedAt: Date;
 };
 
+export type JobScanResultDoc = {
+  _id: ObjectId;
+  userId: ObjectId;
+  historyKey: string;
+  origin: 'url' | 'screenshots';
+  url: string;
+  canonicalUrlHash: string | null;
+  jobContentHash: string | null;
+  profileHash: string | null;
+  analysisId: string;
+  scanDepth: 'lite' | 'full';
+  requestedScanDepth: 'auto' | 'lite' | 'full';
+  providerUsed: string | null;
+  resultSnapshot: Record<string, unknown>;
+  meta: {
+    source: string;
+    cached: boolean;
+    provider: string | null;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type JobUsageLimitsDoc = {
   _id: ObjectId;
   userId: ObjectId;
@@ -502,6 +558,10 @@ export type JobUsageLimitsDoc = {
   freeWindowSuccessCount: number;
   premiumDateKey: string | null;
   premiumDailyCount: number;
+  liteDateKey?: string | null;
+  liteDailyCount?: number;
+  fullDateKey?: string | null;
+  fullDailyCount?: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -743,6 +803,26 @@ export type JobFetchNegativeCacheDoc = {
   expiresAt: Date;
 };
 
+export type MarketOccupationInsightDoc = {
+  _id: ObjectId;
+  cacheKey: string;
+  keyword: string;
+  normalizedKeyword: string;
+  location: string;
+  normalizedLocation: string;
+  occupation: OccupationInsightResponse['occupation'];
+  salary: OccupationInsightResponse['salary'];
+  outlook: OccupationInsightResponse['outlook'];
+  skills: OccupationInsightResponse['skills'];
+  labels: OccupationInsightResponse['labels'];
+  sources: OccupationInsightResponse['sources'];
+  providerVersions?: Record<string, string>;
+  retrievedAt: Date;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type MongoCollections = {
   users: Collection<UserDoc>;
   sessions: Collection<SessionDoc>;
@@ -756,10 +836,13 @@ export type MongoCollections = {
   fullNatalCareerAnalysis: Collection<FullNatalCareerAnalysisDoc>;
   discoverRoleCatalog: Collection<DiscoverRoleCatalogDoc>;
   discoverRoleRecommendations: Collection<DiscoverRoleRecommendationsDoc>;
+  discoverRoleCurrentJobs: Collection<DiscoverRoleCurrentJobDoc>;
+  discoverRoleShortlistEntries: Collection<DiscoverRoleShortlistEntryDoc>;
   jobsRaw: Collection<JobRawDoc>;
   jobRawArtifacts: Collection<JobRawArtifactDoc>;
   jobsParsed: Collection<JobParsedDoc>;
   jobAnalyses: Collection<JobAnalysisDoc>;
+  jobScanResults: Collection<JobScanResultDoc>;
   jobUsageLimits: Collection<JobUsageLimitsDoc>;
   llmGatewayTelemetry: Collection<LlmGatewayTelemetryDoc>;
   billingSubscriptions: Collection<BillingSubscriptionDoc>;
@@ -773,6 +856,7 @@ export type MongoCollections = {
   interviewStrategySettings: Collection<InterviewStrategySettingsDoc>;
   interviewStrategySlots: Collection<InterviewStrategySlotDoc>;
   jobFetchNegativeCache: Collection<JobFetchNegativeCacheDoc>;
+  marketOccupationInsights: Collection<MarketOccupationInsightDoc>;
 };
 
 let clientPromise: Promise<MongoClient> | null = null;
@@ -814,10 +898,13 @@ export async function getCollections(): Promise<MongoCollections> {
     fullNatalCareerAnalysis: db.collection<FullNatalCareerAnalysisDoc>('full_natal_career_analysis'),
     discoverRoleCatalog: db.collection<DiscoverRoleCatalogDoc>('discover_role_catalog'),
     discoverRoleRecommendations: db.collection<DiscoverRoleRecommendationsDoc>('discover_role_recommendations'),
+    discoverRoleCurrentJobs: db.collection<DiscoverRoleCurrentJobDoc>('discover_role_current_jobs'),
+    discoverRoleShortlistEntries: db.collection<DiscoverRoleShortlistEntryDoc>('discover_role_shortlist_entries'),
     jobsRaw: db.collection<JobRawDoc>('jobs_raw'),
     jobRawArtifacts: db.collection<JobRawArtifactDoc>('job_raw_artifacts'),
     jobsParsed: db.collection<JobParsedDoc>('jobs_parsed'),
     jobAnalyses: db.collection<JobAnalysisDoc>('job_analyses'),
+    jobScanResults: db.collection<JobScanResultDoc>('job_scan_results'),
     jobUsageLimits: db.collection<JobUsageLimitsDoc>('job_usage_limits'),
     llmGatewayTelemetry: db.collection<LlmGatewayTelemetryDoc>('llm_gateway_telemetry'),
     billingSubscriptions: db.collection<BillingSubscriptionDoc>('billing_subscriptions'),
@@ -831,6 +918,7 @@ export async function getCollections(): Promise<MongoCollections> {
     interviewStrategySettings: db.collection<InterviewStrategySettingsDoc>('interview_strategy_settings'),
     interviewStrategySlots: db.collection<InterviewStrategySlotDoc>('interview_strategy_slots'),
     jobFetchNegativeCache: db.collection<JobFetchNegativeCacheDoc>('job_fetch_negative_cache'),
+    marketOccupationInsights: db.collection<MarketOccupationInsightDoc>('market_occupation_insights'),
   };
 }
 
@@ -890,6 +978,13 @@ export async function ensureMongoIndexes() {
         { unique: true }
       );
       await collections.discoverRoleRecommendations.createIndex({ userId: 1, updatedAt: -1 });
+      await collections.discoverRoleCurrentJobs.createIndex({ userId: 1 }, { unique: true });
+      await collections.discoverRoleCurrentJobs.createIndex({ updatedAt: -1 });
+      await collections.discoverRoleShortlistEntries.createIndex(
+        { userId: 1, slug: 1 },
+        { unique: true }
+      );
+      await collections.discoverRoleShortlistEntries.createIndex({ userId: 1, updatedAt: -1 });
       await collections.jobsRaw.createIndex({ canonicalUrlHash: 1 }, { unique: true });
       await collections.jobsRaw.createIndex({ source: 1, sourceJobId: 1 });
       await collections.jobsRaw.createIndex({ jobContentHash: 1, updatedAt: -1 });
@@ -909,6 +1004,8 @@ export async function ensureMongoIndexes() {
         { unique: true }
       );
       await collections.jobAnalyses.createIndex({ userId: 1, updatedAt: -1 });
+      await collections.jobScanResults.createIndex({ userId: 1, historyKey: 1 }, { unique: true });
+      await collections.jobScanResults.createIndex({ userId: 1, updatedAt: -1 });
       await collections.jobUsageLimits.createIndex({ userId: 1 }, { unique: true });
       await collections.llmGatewayTelemetry.createIndex({ createdAt: -1 });
       await collections.llmGatewayTelemetry.createIndex({ event: 1, createdAt: -1 });
@@ -952,6 +1049,10 @@ export async function ensureMongoIndexes() {
       await collections.jobFetchNegativeCache.createIndex({ source: 1, status: 1, updatedAt: -1 });
       await collections.jobFetchNegativeCache.createIndex({ updatedAt: -1 });
       await collections.jobFetchNegativeCache.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      await collections.marketOccupationInsights.createIndex({ cacheKey: 1 }, { unique: true });
+      await collections.marketOccupationInsights.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+      await collections.marketOccupationInsights.createIndex({ 'occupation.onetCode': 1, location: 1 });
+      await collections.marketOccupationInsights.createIndex({ normalizedKeyword: 1, normalizedLocation: 1 });
     })();
   }
   await indexPromise;

@@ -15,6 +15,11 @@ import {
   getFullNatalAnalysisConfig,
 } from '../fullNatalAnalysis.js';
 import {
+  buildMarketCareerContext,
+  serializeMarketCareerPathsForPrompt,
+  type MarketCareerContext,
+} from '../marketCareerContext.js';
+import {
   getOperationProgressSnapshot,
   startOperationProgress,
   type OperationProgressDefinition,
@@ -38,6 +43,7 @@ export const natalChartRequestSchema = z.object({
   longitude: z.number().min(-180).max(180).nullable().optional(),
   country: z.string().trim().min(2).max(120).nullable().optional(),
   admin1: z.string().trim().min(1).max(120).nullable().optional(),
+  currentJobTitle: z.string().trim().min(2).max(120).nullable().optional(),
 });
 
 const housePlanetSchema = z.object({
@@ -111,6 +117,26 @@ export const discoverRolesQuerySchema = z.object({
   refresh: queryBooleanSchema,
   deferSearchScores: queryBooleanSchema,
   scoreSlug: z.string().trim().max(120).default(""),
+  rankingMode: z.enum(["fit", "opportunity"]).default("fit"),
+});
+
+export const discoverRoleShortlistParamsSchema = z.object({
+  slug: z.string().trim().min(1).max(120),
+});
+
+export const discoverRoleShortlistBodySchema = z.object({
+  role: z.string().trim().min(1).max(120),
+  domain: z.string().trim().min(1).max(120),
+  scoreLabel: z.string().trim().max(48).nullable().default(null),
+  scoreValue: z.number().finite().nullable().default(null),
+  tags: z.array(z.string().trim().min(1).max(48)).max(6).default([]),
+  market: z.record(z.string(), z.unknown()).nullable().default(null),
+  detail: z.record(z.string(), z.unknown()).nullable().default(null),
+  savedAt: z.string().trim().max(64).optional(),
+});
+
+export const discoverRoleCurrentJobBodySchema = z.object({
+  title: z.string().trim().min(2).max(120),
 });
 
 export const aiSynergyHistoryQuerySchema = z.object({
@@ -275,6 +301,12 @@ function normalizeOptionalText(value: string | null | undefined) {
 function normalizePersonName(value: string | null | undefined) {
   if (typeof value !== "string") return "";
   return value.trim().replace(/\s+/g, " ");
+}
+
+export function normalizeCurrentJobTitle(value: string | null | undefined) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().replace(/\s+/g, " ");
+  return normalized.length >= 2 ? normalized : null;
 }
 
 export function normalizeCoordinate(value: number | null | undefined) {
@@ -445,6 +477,8 @@ export async function upsertBirthProfile(
       lockLevel: number;
       durationDays: number;
     } | null;
+    currentJobChanged?: boolean;
+    touchUpdatedAt?: boolean;
   },
 ) {
   const collections = await getCollections();
@@ -462,8 +496,16 @@ export async function upsertBirthProfile(
     admin1: normalizeOptionalText(input.admin1),
     normalizedCity: normalizeCity(input.city),
     profileHash,
-    updatedAt: now,
   };
+  if (options?.touchUpdatedAt !== false) {
+    nextSet.updatedAt = now;
+  }
+  if (input.currentJobTitle !== undefined) {
+    nextSet.currentJobTitle = normalizeCurrentJobTitle(input.currentJobTitle);
+    if (options?.currentJobChanged ?? true) {
+      nextSet.currentJobUpdatedAt = nextSet.currentJobTitle ? now : null;
+    }
+  }
   if (options?.editLock) {
     nextSet.birthEditLockLevel = options.editLock.lockLevel;
     nextSet.birthEditLockDurationDays = options.editLock.durationDays;
@@ -593,6 +635,8 @@ export type FullNatalAnalysisRouteResponse = {
     profileUpdatedAt: string;
     expiresAt: string;
   } | null;
+  marketContext: Pick<MarketCareerContext, "algorithmVersion" | "generatedAt" | "location" | "sourceNote"> | null;
+  marketCareerPaths: MarketCareerContext["marketCareerPaths"];
   analysis: FullNatalCareerAnalysisPayloadDoc;
 };
 
@@ -673,6 +717,16 @@ export function serializeFullNatalAnalysisGeneration(
   return next;
 }
 
+function serializeMarketCareerContextSummary(context: MarketCareerContext | null): FullNatalAnalysisRouteResponse["marketContext"] {
+  if (!context) return null;
+  return {
+    algorithmVersion: context.algorithmVersion,
+    generatedAt: context.generatedAt,
+    location: context.location,
+    sourceNote: context.sourceNote,
+  };
+}
+
 export async function getFullNatalAnalysisProgressForUser(input: {
   userId: ObjectId;
 }): Promise<OperationProgressSnapshot> {
@@ -727,6 +781,31 @@ export async function getOrCreateFullNatalAnalysisForUser(input: {
       previousReport,
     });
   };
+  const loadMarketCareerContext = async (chartDoc?: { chart?: unknown } | null) => {
+    const natalChart = chartDoc ?? await collections.natalCharts.findOne(
+      {
+        userId: input.userId,
+        profileHash,
+      },
+      { projection: { chart: 1 } },
+    );
+    if (!natalChart) return null;
+
+    const parsedChart = westernChartSchema.safeParse(natalChart.chart);
+    if (!parsedChart.success) {
+      input.logger.error(
+        { issues: parsedChart.error.issues },
+        "cached natal chart validation failed for full analysis market context",
+      );
+      return null;
+    }
+
+    return buildMarketCareerContext({
+      chartPayload: buildChartPromptPayload(parsedChart.data),
+      logger: input.logger,
+      limit: 5,
+    });
+  };
 
   const cached = await collections.fullNatalCareerAnalysis.findOne(
     {
@@ -739,6 +818,7 @@ export async function getOrCreateFullNatalAnalysisForUser(input: {
   );
 
   if (cached) {
+    const marketCareerContext = await loadMarketCareerContext();
     return {
       cached: true,
       model: cached.model,
@@ -747,6 +827,8 @@ export async function getOrCreateFullNatalAnalysisForUser(input: {
       generatedAt: cached.generatedAt.toISOString(),
       profileUpdatedAt: profile.updatedAt.toISOString(),
       profileChangeNotice: await buildProfileChangeNotice(),
+      marketContext: serializeMarketCareerContextSummary(marketCareerContext),
+      marketCareerPaths: marketCareerContext?.marketCareerPaths ?? [],
       analysis: cached.analysis,
     };
   }
@@ -802,6 +884,7 @@ export async function getOrCreateFullNatalAnalysisForUser(input: {
         );
         throw new Error("Cached natal chart has invalid format");
       }
+      const marketCareerContext = await loadMarketCareerContext(natalChart);
 
       progress.setStage('building_blueprint');
       const generated = await generateFullNatalCareerAnalysis({
@@ -810,6 +893,8 @@ export async function getOrCreateFullNatalAnalysisForUser(input: {
           aiSynergyScore: latestAiSynergy?.score ?? null,
           aiSynergyBand: latestAiSynergy?.band ?? null,
           careerInsightsSummary: latestCareerInsight?.summary ?? null,
+          marketCareerPaths: serializeMarketCareerPathsForPrompt(marketCareerContext?.marketCareerPaths ?? []),
+          marketSourceNote: marketCareerContext?.sourceNote ?? null,
         },
         logger: input.logger,
         progress,
@@ -847,6 +932,8 @@ export async function getOrCreateFullNatalAnalysisForUser(input: {
         generatedAt: now.toISOString(),
         profileUpdatedAt: profile.updatedAt.toISOString(),
         profileChangeNotice: await buildProfileChangeNotice(),
+        marketContext: serializeMarketCareerContextSummary(marketCareerContext),
+        marketCareerPaths: marketCareerContext?.marketCareerPaths ?? [],
         analysis: generated.analysis,
       };
     } catch (error) {

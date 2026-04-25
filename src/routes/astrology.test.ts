@@ -12,7 +12,9 @@ import {
   careerVibePlanQuerySchema,
   dailyTransitQuerySchema,
   discoverRolesQuerySchema,
+  discoverRoleShortlistBodySchema,
   fullNatalAnalysisQuerySchema,
+  natalChartRequestSchema,
   resolveBirthProfileEditPolicy,
 } from '../services/astrology/astrologyShared.js';
 import { statusForFullNatalGenerationCode } from '../services/astrology/astrologyPremiumAnalysisRoutes.js';
@@ -63,7 +65,7 @@ test("astrology routes return 401 for unauthenticated requests", async () => {
 
   try {
     const cases: Array<{
-      method: "GET" | "PUT" | "POST";
+      method: "GET" | "PUT" | "POST" | "DELETE";
       url: string;
       payload?: Record<string, unknown>;
     }> = [
@@ -77,6 +79,24 @@ test("astrology routes return 401 for unauthenticated requests", async () => {
       { method: "GET", url: "/api/astrology/ai-synergy/history" },
       { method: "GET", url: "/api/astrology/career-insights" },
       { method: "GET", url: "/api/astrology/discover-roles" },
+      { method: "GET", url: "/api/astrology/discover-roles/current-job" },
+      {
+        method: "PUT",
+        url: "/api/astrology/discover-roles/current-job",
+        payload: { title: "Product Manager" },
+      },
+      { method: "DELETE", url: "/api/astrology/discover-roles/current-job" },
+      { method: "GET", url: "/api/astrology/discover-roles/shortlist" },
+      {
+        method: "PUT",
+        url: "/api/astrology/discover-roles/shortlist/product-manager",
+        payload: { role: "Product Manager" },
+      },
+      {
+        method: "DELETE",
+        url: "/api/astrology/discover-roles/shortlist/product-manager",
+      },
+      { method: "GET", url: "/api/astrology/market-career-context" },
       { method: "POST", url: "/api/astrology/natal-chart", payload: {} },
     ];
 
@@ -162,6 +182,29 @@ test("query and body validation fails before heavy astrology dependencies", asyn
     assert.equal(discover.statusCode, 400);
     assert.equal(discover.json().error, "Invalid query parameters");
 
+    const shortlist = await app.inject({
+      method: "PUT",
+      url: "/api/astrology/discover-roles/shortlist/product-manager",
+      headers: { authorization: "Bearer test" },
+      payload: {
+        role: "",
+        domain: "Product & Strategy",
+      },
+    });
+    assert.equal(shortlist.statusCode, 400);
+    assert.equal(shortlist.json().error, "Invalid shortlist payload");
+
+    const currentJob = await app.inject({
+      method: "PUT",
+      url: "/api/astrology/discover-roles/current-job",
+      headers: { authorization: "Bearer test" },
+      payload: {
+        title: "",
+      },
+    });
+    assert.equal(currentJob.statusCode, 400);
+    assert.equal(currentJob.json().error, "Invalid current job payload");
+
     const birthProfile = await app.inject({
       method: "PUT",
       url: "/api/astrology/birth-profile",
@@ -175,6 +218,57 @@ test("query and body validation fails before heavy astrology dependencies", asyn
   }
 });
 
+test("discover role shortlist body schema accepts persisted detail snapshots", () => {
+  const parsed = discoverRoleShortlistBodySchema.parse({
+    role: "Product Manager",
+    domain: "Product & Strategy",
+    scoreLabel: "91%",
+    scoreValue: 91,
+    tags: ["strategy", "execution"],
+    market: null,
+    detail: {
+      whyFit: {
+        summary: "Strong strategic fit.",
+        bullets: ["Communication and prioritization matter."],
+        topTraits: ["Communication"],
+      },
+      realityCheck: {
+        summary: "Expect messy tradeoffs.",
+        tasks: ["Align product bets."],
+        workContext: ["Cross-functional teams."],
+        toolThemes: ["Roadmapping"],
+      },
+      entryBarrier: {
+        level: "moderate",
+        label: "Moderate Entry Barrier",
+        summary: "Adjacent product or ops proof helps.",
+        signals: ["Portfolio and stakeholder judgment matter."],
+      },
+    },
+  });
+
+  assert.equal(parsed.role, "Product Manager");
+  assert.deepEqual(parsed.detail, {
+    whyFit: {
+      summary: "Strong strategic fit.",
+      bullets: ["Communication and prioritization matter."],
+      topTraits: ["Communication"],
+    },
+    realityCheck: {
+      summary: "Expect messy tradeoffs.",
+      tasks: ["Align product bets."],
+      workContext: ["Cross-functional teams."],
+      toolThemes: ["Roadmapping"],
+    },
+    entryBarrier: {
+      level: "moderate",
+      label: "Moderate Entry Barrier",
+      summary: "Adjacent product or ops proof helps.",
+      signals: ["Portfolio and stakeholder judgment matter."],
+    },
+  });
+});
+
 test("discover roles query parses explicit false booleans as false", () => {
   const parsed = discoverRolesQuerySchema.parse({
     refresh: "false",
@@ -183,16 +277,19 @@ test("discover roles query parses explicit false booleans as false", () => {
 
   assert.equal(parsed.refresh, false);
   assert.equal(parsed.deferSearchScores, false);
+  assert.equal(parsed.rankingMode, "fit");
 
   const deferred = discoverRolesQuerySchema.parse({
     refresh: "true",
     deferSearchScores: "true",
     scoreSlug: "registered-nurse",
+    rankingMode: "opportunity",
   });
 
   assert.equal(deferred.refresh, true);
   assert.equal(deferred.deferSearchScores, true);
   assert.equal(deferred.scoreSlug, "registered-nurse");
+  assert.equal(deferred.rankingMode, "opportunity");
 });
 
 test("runtime astrology query booleans do not coerce string false to true", () => {
@@ -315,6 +412,27 @@ test("birth profile edit policy does not lock initial profile or no-op updates",
   assert.equal(noOpPolicy.changed, false);
   assert.equal(noOpPolicy.blocked, false);
   assert.equal(noOpPolicy.nextLock, null);
+});
+
+test("birth profile hash ignores current job title and schema accepts it as optional metadata", () => {
+  const baseProfile = {
+    birthDate: "01/01/1990",
+    birthTime: "08:30",
+    unknownTime: false,
+    city: "New York",
+  };
+
+  const withProductRole = natalChartRequestSchema.parse({
+    ...baseProfile,
+    currentJobTitle: "  Product Manager  ",
+  });
+  const withFounderRole = natalChartRequestSchema.parse({
+    ...baseProfile,
+    currentJobTitle: "Founder",
+  });
+
+  assert.equal(withProductRole.currentJobTitle, "Product Manager");
+  assert.equal(buildProfileHash(withProductRole), buildProfileHash(withFounderRole));
 });
 
 test("full natal analysis query parses cache-only booleans explicitly", () => {

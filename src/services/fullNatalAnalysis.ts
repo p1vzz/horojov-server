@@ -10,6 +10,7 @@ import { getFullNatalAnalysisPromptConfig } from './llmPromptRegistry.js';
 import { REFLECTIVE_CAREER_GUIDANCE_PROMPT } from './llmPromptGuidance.js';
 import type { FastifyBaseLogger } from 'fastify';
 import type { ChartPromptPayload } from './careerInsights.js';
+import type { MarketCareerPromptPath } from './marketCareerContext.js';
 import type {
   FullNatalCareerAnalysisPayloadDoc,
   FullNatalCareerArchetypeDoc,
@@ -23,6 +24,8 @@ type FullNatalContextInput = {
   aiSynergyScore?: number | null;
   aiSynergyBand?: 'peak' | 'strong' | 'stable' | 'volatile' | null;
   careerInsightsSummary?: string | null;
+  marketCareerPaths?: MarketCareerPromptPath[];
+  marketSourceNote?: string | null;
 };
 
 type FullNatalStructuredCompletionRequest = Parameters<
@@ -55,6 +58,7 @@ const FULL_NATAL_SYSTEM_PROMPT = [
   'No deterministic predictions and no guaranteed outcomes.',
   'Avoid medical, legal, and financial claims.',
   'Every key recommendation should reference chart evidence in plain language.',
+  'When labor-market data is provided, treat it only as third-party factual context and never imply CareerOneStop, O*NET, the U.S. Department of Labor, or any provider endorses Horojob guidance or astrology interpretation.',
   'Output strict JSON only, matching schema.',
 ].join(' ');
 
@@ -66,6 +70,8 @@ const FULL_NATAL_USER_PROMPT = [
   '- strengths: exactly 4 entries.',
   '- blindSpots: exactly 3 entries with mitigation.',
   '- roleFitMatrix: exactly 5 domains with fitScore and example roles.',
+  '- If marketCareerPaths are provided, use salary range and demand context as supporting market facts without presenting providers as recommendation sources.',
+  '- Keep market facts separate from chart interpretation in wording.',
   '- phasePlan: exactly 3 phases (0_6_months, 6_18_months, 18_36_months).',
   '- decisionRules: exactly 6 concise rules.',
   '- next90DaysPlan: exactly 6 concrete actions.',

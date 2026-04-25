@@ -10,6 +10,7 @@ const jobFixture: NormalizedJobPayload = {
   title: 'Senior Product Analytics Manager',
   company: 'Acme Labs',
   location: 'Warsaw, Poland',
+  salaryText: null,
   description:
     'Lead analytics roadmap, build SQL dashboards, partner with product and engineering, communicate insights to stakeholders, and drive long-term strategy under fast-paced deadlines.',
   employmentType: 'full-time',

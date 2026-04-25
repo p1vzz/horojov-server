@@ -7,7 +7,10 @@ import Fastify, {
 import { ObjectId } from 'mongodb';
 import type { AuthContext } from '../services/auth.js';
 import type { JobMetricsReport } from '../services/jobMetrics.js';
-import type { UsageLimitState } from '../services/jobUsageLimits.js';
+import type {
+  JobUsageLimitSnapshot,
+  UsageLimitState,
+} from '../services/jobUsageLimits.js';
 import {
   registerJobRoutes,
   type JobsRouteDependencies,
@@ -15,12 +18,25 @@ import {
 
 const fakeLimit: UsageLimitState = {
   plan: "premium",
+  depth: "full",
   period: "daily_utc",
   limit: 10,
   used: 2,
   remaining: 8,
   nextAvailableAt: null,
   canProceed: true,
+};
+
+const fakeLimits: JobUsageLimitSnapshot = {
+  plan: "premium",
+  lite: {
+    ...fakeLimit,
+    depth: "lite",
+    limit: 30,
+    used: 3,
+    remaining: 27,
+  },
+  full: fakeLimit,
 };
 
 const baseMetricsReport: JobMetricsReport = {
@@ -85,8 +101,22 @@ test("jobs routes return 401 for unauthenticated requests", async () => {
       payload?: Record<string, unknown>;
     }> = [
       { method: "GET", url: "/api/jobs/limits" },
+      { method: "GET", url: "/api/jobs/history" },
       { method: "GET", url: "/api/jobs/metrics" },
       { method: "GET", url: "/api/jobs/alerts" },
+      {
+        method: "POST",
+        url: "/api/jobs/history/import",
+        payload: {
+          entries: [
+            {
+              url: "https://www.linkedin.com/jobs/view/1234567890/",
+              analysis: { analysisId: "analysis-1", status: "done" },
+              meta: { source: "linkedin", cached: false, provider: "http_fetch" },
+            },
+          ],
+        },
+      },
       {
         method: "POST",
         url: "/api/jobs/preflight",
@@ -127,9 +157,14 @@ test("jobs routes return 401 for unauthenticated requests", async () => {
 
 test("metrics and alerts reject invalid query before expensive work", async () => {
   let collectCalled = false;
+  let historyCalled = false;
   const auth = buildFakeAuthContext();
   const app = await buildJobsTestApp({
     authenticateByAuthorizationHeader: async () => auth,
+    listJobScanHistory: async () => {
+      historyCalled = true;
+      return [];
+    },
     collectJobMetrics: async () => {
       collectCalled = true;
       return baseMetricsReport;
@@ -152,7 +187,15 @@ test("metrics and alerts reject invalid query before expensive work", async () =
     });
     assert.equal(alertsResponse.statusCode, 400);
     assert.equal(alertsResponse.json().error, "Invalid alerts query");
+    const historyResponse = await app.inject({
+      method: "GET",
+      url: "/api/jobs/history?limit=0",
+      headers: { authorization: "Bearer test" },
+    });
+    assert.equal(historyResponse.statusCode, 400);
+    assert.equal(historyResponse.json().error, "Invalid history query");
     assert.equal(collectCalled, false);
+    assert.equal(historyCalled, false);
   } finally {
     await app.close();
   }
@@ -194,6 +237,8 @@ test("metrics and alerts are hidden when technical job endpoints are disabled", 
 
 test("jobs route wiring delegates to injected handlers", async () => {
   const auth = buildFakeAuthContext();
+  let historyCalls = 0;
+  let historyImportCalls = 0;
   let preflightCalls = 0;
   let screenshotsCalls = 0;
   let analyzeCalls = 0;
@@ -216,6 +261,22 @@ test("jobs route wiring delegates to injected handlers", async () => {
     authenticateByAuthorizationHeader: async () => auth,
     resolveUserUsagePlan: () => "premium",
     getCurrentUsageLimitState: async () => fakeLimit,
+    getCurrentJobUsageLimitSnapshot: async () => fakeLimits,
+    listJobScanHistory: async () => {
+      historyCalls += 1;
+      return [
+        {
+          url: "https://example.com/jobs/1",
+          analysis: { analysisId: "analysis-1", status: "done" },
+          meta: { source: "linkedin", cached: false, provider: "http_fetch" },
+          savedAt: new Date("2026-03-25T00:00:00.000Z").toISOString(),
+        },
+      ];
+    },
+    syncJobScanHistoryEntries: async () => {
+      historyImportCalls += 1;
+      return { importedCount: 1 };
+    },
     collectJobMetrics: async (windowHoursInput) => {
       metricsHours = windowHoursInput;
       return {
@@ -252,6 +313,32 @@ test("jobs route wiring delegates to injected handlers", async () => {
     assert.equal(limitsResponse.statusCode, 200);
     assert.equal(limitsResponse.json().plan, "premium");
     assert.deepEqual(limitsResponse.json().limit, fakeLimit);
+    assert.deepEqual(limitsResponse.json().limits, fakeLimits);
+
+    const historyResponse = await app.inject({
+      method: "GET",
+      url: "/api/jobs/history?limit=4",
+      headers: { authorization: "Bearer test" },
+    });
+    assert.equal(historyResponse.statusCode, 200);
+    assert.equal(historyResponse.json()[0]?.url, "https://example.com/jobs/1");
+
+    const importResponse = await app.inject({
+      method: "POST",
+      url: "/api/jobs/history/import",
+      headers: { authorization: "Bearer test" },
+      payload: {
+        entries: [
+          {
+            url: "https://example.com/jobs/1",
+            analysis: { analysisId: "analysis-1", status: "done" },
+            meta: { source: "linkedin", cached: false, provider: "http_fetch" },
+          },
+        ],
+      },
+    });
+    assert.equal(importResponse.statusCode, 200);
+    assert.equal(importResponse.json().importedCount, 1);
 
     const metricsResponse = await app.inject({
       method: "GET",
@@ -302,6 +389,8 @@ test("jobs route wiring delegates to injected handlers", async () => {
     assert.equal(preflightCalls, 1);
     assert.equal(screenshotsCalls, 1);
     assert.equal(analyzeCalls, 1);
+    assert.equal(historyCalls, 1);
+    assert.equal(historyImportCalls, 1);
   } finally {
     await app.close();
   }

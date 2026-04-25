@@ -4,7 +4,12 @@ import type {
   JobMetricsAlertsReport,
   JobMetricsReport,
 } from '../jobMetrics.js';
-import type { UsageLimitState, UsagePlan } from '../jobUsageLimits.js';
+import type {
+  JobUsageLimitSnapshot,
+  UsageLimitState,
+  UsagePlan,
+} from '../jobUsageLimits.js';
+import type { JobScanHistoryEntryPayload } from './historyStore.js';
 import { metricsQuerySchema } from './schemas.js';
 
 export type JobsCoreRouteDependencies = {
@@ -17,6 +22,19 @@ export type JobsCoreRouteDependencies = {
     plan: UsagePlan;
     now?: Date;
   }) => Promise<UsageLimitState>;
+  getCurrentJobUsageLimitSnapshot: (input: {
+    userId: AuthContext["user"]["_id"];
+    plan: UsagePlan;
+    now?: Date;
+  }) => Promise<JobUsageLimitSnapshot>;
+  listJobScanHistory: (input: {
+    userId: AuthContext["user"]["_id"];
+    limit?: number;
+  }) => Promise<JobScanHistoryEntryPayload[]>;
+  syncJobScanHistoryEntries: (input: {
+    userId: AuthContext["user"]["_id"];
+    entries: JobScanHistoryEntryPayload[];
+  }) => Promise<{ importedCount: number }>;
   collectJobMetrics: (windowHoursInput?: number) => Promise<JobMetricsReport>;
   evaluateJobMetricsAlerts: (
     metrics: JobMetricsReport,
@@ -47,11 +65,12 @@ export function createJobLimitsHandler(
     if (!auth) return;
 
     const plan = deps.resolveUserUsagePlan(auth.user);
-    const limit = await deps.getCurrentUsageLimitState({
+    const limits = await deps.getCurrentJobUsageLimitSnapshot({
       userId: auth.user._id,
       plan,
     });
-    return { plan, limit };
+    const limit = limits.full;
+    return { plan, limit, limits };
   };
 }
 

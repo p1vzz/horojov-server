@@ -284,6 +284,8 @@ test('full natal generation lock shares concurrent producer work', async () => {
       generatedAt: '2026-04-20T10:00:00.000Z',
       profileUpdatedAt: '2026-04-20T09:00:00.000Z',
       profileChangeNotice: null,
+      marketContext: null,
+      marketCareerPaths: [],
       analysis: buildValidLlmPayload(),
     };
   };

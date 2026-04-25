@@ -6,6 +6,8 @@ import { registerCityRoutes } from './routes/cities.js';
 import { registerAstrologyRoutes } from './routes/astrology.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerJobRoutes } from './routes/jobs.js';
+import { registerMarketRoutes } from './routes/market.js';
+import { registerPublicMarketRoutes } from './routes/publicMarket.js';
 import { registerBillingRoutes } from './routes/billing.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
 
@@ -38,6 +40,8 @@ export function buildApp() {
   app.register(registerCityRoutes, { prefix: '/api/cities' });
   app.register(registerAstrologyRoutes, { prefix: '/api/astrology' });
   app.register(registerJobRoutes, { prefix: '/api/jobs' });
+  app.register(registerMarketRoutes, { prefix: '/api/market' });
+  app.register(registerPublicMarketRoutes, { prefix: '/api/public/market' });
   app.register(registerBillingRoutes, { prefix: '/api/billing' });
   app.register(registerNotificationRoutes, { prefix: '/api/notifications' });
 

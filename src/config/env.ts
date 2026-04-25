@@ -44,6 +44,15 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(8787),
   APP_BODY_LIMIT_BYTES: z.coerce.number().int().min(1_000_000).max(100_000_000).default(12_000_000),
   OPEN_METEO_BASE_URL: z.string().url().default('https://geocoding-api.open-meteo.com/v1'),
+  CAREERONESTOP_BASE_URL: z.string().url().default('https://api.careeronestop.org'),
+  CAREERONESTOP_USER_ID: optionalNonEmptyString,
+  CAREERONESTOP_TOKEN: optionalNonEmptyString,
+  CAREERONESTOP_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(10000),
+  ONET_BASE_URL: z.string().url().default('https://api-v2.onetcenter.org'),
+  ONET_API_KEY: optionalNonEmptyString,
+  ONET_TOKEN: optionalNonEmptyString,
+  ONET_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(10000),
+  MARKET_CACHE_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   CORS_ORIGINS: z.preprocess(
     (value) => (typeof value === 'string' ? value.trim() : value),
     z.string().optional()
@@ -251,6 +260,7 @@ export const env = {
     parsedEnv.data.JOB_METRICS_ENDPOINTS_ENABLED ?? parsedEnv.data.NODE_ENV !== 'production',
   EFFECTIVE_EXPO_PUSH_ACCESS_TOKEN: parsedEnv.data.EXPO_PUSH_ACCESS_TOKEN ?? parsedEnv.data.EXPO_TOKEN ?? '',
   EFFECTIVE_MONGO_URI: parsedEnv.data.MONGO_URI ?? parsedEnv.data.MONGODB_URI ?? '',
+  EFFECTIVE_ONET_API_KEY: parsedEnv.data.ONET_API_KEY ?? parsedEnv.data.ONET_TOKEN ?? '',
   CORS_ORIGINS_LIST: origins,
   JOB_SCRAPER_ENABLED_SOURCES_LIST: toList(parsedEnv.data.JOB_SCRAPER_ENABLED_SOURCES),
   JOB_SCRAPER_SOURCE_PRIORITY_LIST: toList(parsedEnv.data.JOB_SCRAPER_SOURCE_PRIORITY),

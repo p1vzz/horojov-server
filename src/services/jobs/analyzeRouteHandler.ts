@@ -25,11 +25,16 @@ import {
   isLikelyChallengeJobPayload,
   type NormalizedJobPayload,
 } from '../jobProviders.js';
+import type { OccupationInsightResponse } from '../marketData/types.js';
 import { validateAndCanonicalizeJobUrl } from '../jobUrl.js';
 import {
-  getCurrentUsageLimitState,
-  incrementUsageAfterSuccessfulProviderCall,
+  getCurrentJobUsageLimitSnapshot,
+  incrementUsageAfterSuccessfulScan,
+  resolveJobScanDepth,
   resolveUserUsagePlan,
+  type JobScanDepth,
+  type JobUsageLimitSnapshot,
+  type UsageLimitState,
 } from '../jobUsageLimits.js';
 import {
   compactProviderAttempts,
@@ -40,6 +45,8 @@ import {
   statusCodeForValidationCode,
   stripRawHtmlFromPayload,
 } from './common.js';
+import { upsertJobScanHistory } from './historyStore.js';
+import { buildJobMarketInsight } from './marketEnrichment.js';
 import { analyzeSchema } from './schemas.js';
 
 function asStringArray(input: unknown, maxItems: number) {
@@ -55,6 +62,9 @@ export function buildCachedJobAnalyzeResponse(input: {
   rawCacheHit: boolean;
   parsedCacheHit: boolean;
   plan: 'free' | 'premium';
+  limit: UsageLimitState;
+  limits: JobUsageLimitSnapshot;
+  market: OccupationInsightResponse | null;
   versions: {
     parserVersion: string;
     rubricVersion: string;
@@ -69,6 +79,8 @@ export function buildCachedJobAnalyzeResponse(input: {
   return {
     analysisId: input.analysisId,
     status: "done",
+    scanDepth: "full",
+    requestedScanDepth: "full",
     providerUsed: input.providerUsed,
     cached: true,
     cache: {
@@ -78,7 +90,10 @@ export function buildCachedJobAnalyzeResponse(input: {
     },
     usage: {
       plan: input.plan,
+      depth: "full",
       incremented: false,
+      limit: input.limit,
+      limits: input.limits,
     },
     versions: input.versions,
     scores: input.cachedResult.scores ?? null,
@@ -94,10 +109,12 @@ export function buildCachedJobAnalyzeResponse(input: {
       descriptors.length > 0
         ? descriptors
         : asStringArray(input.parsedFeaturesObject.descriptors, 8),
+    market: input.market,
     job: {
       title: input.normalizedJob.title,
       company: input.normalizedJob.company,
       location: input.normalizedJob.location,
+      salaryText: input.normalizedJob.salaryText,
       employmentType: input.normalizedJob.employmentType,
       source: input.normalizedJob.source,
     },
@@ -134,31 +151,6 @@ export async function handleJobAnalyze(
   const now = new Date();
   const versions = getJobAnalysisVersions();
   const collections = await getCollections();
-  const profile = await collections.birthProfiles.findOne(
-    {
-      userId: auth.user._id,
-    },
-    { projection: { profileHash: 1 } },
-  );
-  if (!profile) {
-    return reply
-      .code(404)
-      .send({ error: "Birth profile not found. Complete onboarding first." });
-  }
-
-  const natalChart = await collections.natalCharts.findOne(
-    {
-      userId: auth.user._id,
-      profileHash: profile.profileHash,
-    },
-    { projection: { chart: 1 } },
-  );
-  if (!natalChart) {
-    return reply
-      .code(404)
-      .send({ error: "Natal chart not found. Generate chart first." });
-  }
-
   const canonical = validated.data;
   let rawDocCandidate = await collections.jobsRaw.findOne({
     canonicalUrlHash: canonical.canonicalUrlHash,
@@ -204,6 +196,9 @@ export async function handleJobAnalyze(
   }
 
   const plan = resolveUserUsagePlan(auth.user);
+  let selectedScanDepth: JobScanDepth | null = null;
+  let selectedLimit: UsageLimitState | null = null;
+  let selectedLimits: JobUsageLimitSnapshot | null = null;
   const negativeCacheCandidate =
     rawDoc === null
       ? await collections.jobFetchNegativeCache.findOne({
@@ -234,18 +229,27 @@ export async function handleJobAnalyze(
   let usageIncremented = false;
 
   if (!rawDoc) {
-    const limit = await getCurrentUsageLimitState({
+    const limits = await getCurrentJobUsageLimitSnapshot({
       userId: auth.user._id,
       plan,
       now,
     });
-    if (!limit.canProceed) {
+    const depthResolution = resolveJobScanDepth({
+      limits,
+      requestedDepth: parse.data.scanDepth,
+    });
+    if (!depthResolution.canProceed) {
       return reply.code(429).send({
         error: "Parse limit reached",
         code: "usage_limit_reached",
-        limit,
+        scanDepth: depthResolution.depth,
+        limit: depthResolution.limit,
+        limits,
       });
     }
+    selectedScanDepth = depthResolution.depth;
+    selectedLimit = depthResolution.limit;
+    selectedLimits = limits;
 
     const fetched = await fetchJobWithProviderFallback({
       canonical,
@@ -377,13 +381,7 @@ export async function handleJobAnalyze(
       collections.jobFetchNegativeCache.deleteOne({
         canonicalUrlHash: canonical.canonicalUrlHash,
       }),
-      incrementUsageAfterSuccessfulProviderCall({
-        userId: auth.user._id,
-        plan,
-        now,
-      }),
     ]);
-    usageIncremented = true;
   }
 
   if (!rawDoc) {
@@ -458,29 +456,193 @@ export async function handleJobAnalyze(
       ? (parsedFeatures as Record<string, unknown>)
       : {};
 
-  const analysisFilter = {
-    userId: auth.user._id,
-    profileHash: profile.profileHash,
-    jobContentHash: rawDoc.jobContentHash,
-    rubricVersion: versions.rubricVersion,
-    modelVersion: versions.modelVersion,
-  };
+  const shouldCheckFullAnalysis = parse.data.scanDepth !== "lite";
+  const profile = shouldCheckFullAnalysis
+    ? await collections.birthProfiles.findOne(
+        {
+          userId: auth.user._id,
+        },
+        { projection: { profileHash: 1 } },
+      )
+    : null;
 
-  const cachedAnalysis = parse.data.regenerate
-    ? null
-    : await collections.jobAnalyses.findOne(analysisFilter);
+  const analysisFilter = profile
+    ? {
+        userId: auth.user._id,
+        profileHash: profile.profileHash,
+        jobContentHash: rawDoc.jobContentHash,
+        rubricVersion: versions.rubricVersion,
+        modelVersion: versions.modelVersion,
+      }
+    : null;
+
+  const cachedAnalysis =
+    parse.data.regenerate || !analysisFilter
+      ? null
+      : await collections.jobAnalyses.findOne(analysisFilter);
   if (cachedAnalysis) {
-    return buildCachedJobAnalyzeResponse({
+    const cachedLimits =
+      selectedLimits ??
+      await getCurrentJobUsageLimitSnapshot({
+        userId: auth.user._id,
+        plan,
+        now,
+      });
+    const market = await buildJobMarketInsight({
+      normalizedJob,
+      log: request.log,
+    });
+    const response = buildCachedJobAnalyzeResponse({
       analysisId: cachedAnalysis._id.toHexString(),
       providerUsed: providerUsed ?? rawDoc.provider,
       rawCacheHit,
       parsedCacheHit,
       plan,
+      limit: cachedLimits.full,
+      limits: cachedLimits,
+      market,
       versions,
       cachedResult: cachedAnalysis.result as Record<string, unknown>,
       parsedFeaturesObject,
       normalizedJob,
     });
+    await upsertJobScanHistory({
+      userId: auth.user._id,
+      url: canonical.canonicalUrl,
+      analysis: response,
+      meta: {
+        source: normalizedJob.source,
+        cached: response.cached,
+        provider: response.providerUsed,
+      },
+      savedAt: now,
+      origin: 'url',
+      canonicalUrlHash: canonical.canonicalUrlHash,
+      jobContentHash: rawDoc.jobContentHash,
+      profileHash: profile?.profileHash ?? null,
+    });
+    return response;
+  }
+
+  if (!selectedScanDepth || !selectedLimit || !selectedLimits) {
+    const limits = await getCurrentJobUsageLimitSnapshot({
+      userId: auth.user._id,
+      plan,
+      now,
+    });
+    const depthResolution = resolveJobScanDepth({
+      limits,
+      requestedDepth: parse.data.scanDepth,
+    });
+    if (!depthResolution.canProceed) {
+      return reply.code(429).send({
+        error: "Parse limit reached",
+        code: "usage_limit_reached",
+        scanDepth: depthResolution.depth,
+        limit: depthResolution.limit,
+        limits,
+      });
+    }
+    selectedScanDepth = depthResolution.depth;
+    selectedLimit = depthResolution.limit;
+    selectedLimits = limits;
+  }
+
+  if (selectedScanDepth === "lite") {
+    const market = await buildJobMarketInsight({
+      normalizedJob,
+      log: request.log,
+    });
+    await incrementUsageAfterSuccessfulScan({
+      userId: auth.user._id,
+      plan,
+      depth: "lite",
+      now,
+    });
+    usageIncremented = true;
+    const postLimits = await getCurrentJobUsageLimitSnapshot({
+      userId: auth.user._id,
+      plan,
+      now: new Date(),
+    });
+
+    const response = {
+      analysisId: new ObjectId().toHexString(),
+      status: "done",
+      scanDepth: "lite",
+      requestedScanDepth: parse.data.scanDepth,
+      providerUsed: providerUsed ?? rawDoc.provider,
+      providerAttempts,
+      cached: false,
+      cache: {
+        raw: rawCacheHit,
+        parsed: parsedCacheHit,
+        analysis: false,
+      },
+      usage: {
+        plan,
+        depth: "lite",
+        incremented: usageIncremented,
+        limit: postLimits.lite,
+        limits: postLimits,
+      },
+      versions,
+      scores: {
+        compatibility: 0,
+        aiReplacementRisk: 0,
+        overall: 0,
+      },
+      breakdown: [],
+      jobSummary: market
+        ? `${market.occupation.title} market snapshot based on public labor data.`
+        : `${normalizedJob.title} role detected from vacancy payload.`,
+      tags: asStringArray(parsedFeaturesObject.tags, 40),
+      descriptors: asStringArray(parsedFeaturesObject.descriptors, 8),
+      market,
+      job: {
+        title: normalizedJob.title,
+        company: normalizedJob.company,
+        location: normalizedJob.location,
+        salaryText: normalizedJob.salaryText,
+        employmentType: normalizedJob.employmentType,
+        source: normalizedJob.source,
+      },
+    };
+    await upsertJobScanHistory({
+      userId: auth.user._id,
+      url: canonical.canonicalUrl,
+      analysis: response,
+      meta: {
+        source: normalizedJob.source,
+        cached: response.cached,
+        provider: response.providerUsed,
+      },
+      savedAt: now,
+      origin: 'url',
+      canonicalUrlHash: canonical.canonicalUrlHash,
+      jobContentHash: rawDoc.jobContentHash,
+      profileHash: null,
+    });
+    return response;
+  }
+
+  if (!profile) {
+    return reply
+      .code(404)
+      .send({ error: "Birth profile not found. Complete onboarding first." });
+  }
+
+  const natalChart = await collections.natalCharts.findOne(
+    {
+      userId: auth.user._id,
+      profileHash: profile.profileHash,
+    },
+    { projection: { chart: 1 } },
+  );
+  if (!natalChart) {
+    return reply
+      .code(404)
+      .send({ error: "Natal chart not found. Generate chart first." });
   }
 
   const featuresForAnalysis = {
@@ -506,6 +668,10 @@ export async function handleJobAnalyze(
     natalChart: natalChart.chart,
   });
 
+  if (!analysisFilter) {
+    return reply.code(502).send({ error: "Full analysis cache key is unavailable" });
+  }
+
   const persisted = await collections.jobAnalyses.findOneAndUpdate(
     analysisFilter,
     {
@@ -529,14 +695,27 @@ export async function handleJobAnalyze(
     return reply.code(502).send({ error: "Unable to persist job analysis" });
   }
 
-  const limit = await getCurrentUsageLimitState({
+  const market = await buildJobMarketInsight({
+    normalizedJob,
+    log: request.log,
+  });
+  await incrementUsageAfterSuccessfulScan({
+    userId: auth.user._id,
+    plan,
+    depth: "full",
+    now,
+  });
+  usageIncremented = true;
+  const limits = await getCurrentJobUsageLimitSnapshot({
     userId: auth.user._id,
     plan,
     now: new Date(),
   });
-  return {
+  const response = {
     analysisId: persisted._id.toHexString(),
     status: "done",
+    scanDepth: "full",
+    requestedScanDepth: parse.data.scanDepth,
     providerUsed: providerUsed ?? rawDoc.provider,
     providerAttempts,
     cached: false,
@@ -547,8 +726,10 @@ export async function handleJobAnalyze(
     },
     usage: {
       plan,
+      depth: "full",
       incremented: usageIncremented,
-      limit,
+      limit: limits.full,
+      limits,
     },
     versions,
     scores: analysisResult.scores,
@@ -556,12 +737,30 @@ export async function handleJobAnalyze(
     jobSummary: analysisResult.jobSummary,
     tags: analysisResult.tags,
     descriptors: analysisResult.descriptors,
+    market,
     job: {
       title: normalizedJob.title,
       company: normalizedJob.company,
       location: normalizedJob.location,
+      salaryText: normalizedJob.salaryText,
       employmentType: normalizedJob.employmentType,
       source: normalizedJob.source,
     },
   };
+  await upsertJobScanHistory({
+    userId: auth.user._id,
+    url: canonical.canonicalUrl,
+    analysis: response,
+    meta: {
+      source: normalizedJob.source,
+      cached: response.cached,
+      provider: response.providerUsed,
+    },
+    savedAt: now,
+    origin: 'url',
+    canonicalUrlHash: canonical.canonicalUrlHash,
+    jobContentHash: rawDoc.jobContentHash,
+    profileHash: profile.profileHash,
+  });
+  return response;
 }
